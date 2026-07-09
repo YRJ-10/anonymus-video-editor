@@ -7,6 +7,7 @@ const { spawn } = require("node:child_process");
 const { probeFile } = require("./probe");
 const { verifyFile } = require("./verify");
 const { removeMoovMetadataBoxes } = require("./mp4");
+const { normalizeTransform } = require("../desktop/renderer/timeline-model");
 
 function clipDuration(clip) {
   return Math.max(0, Number(clip.sourceOut) - Number(clip.sourceIn));
@@ -68,6 +69,10 @@ async function hasAudioStream(filePath, cache) {
 async function buildExportPlan(project, temporaryPaths) {
   const duration = projectDuration(project);
   if (duration <= 0) throw new Error("The timeline is empty");
+  const canvas =
+    project.canvas?.orientation === "portrait"
+      ? { orientation: "portrait", width: 1080, height: 1920 }
+      : { orientation: "landscape", width: 1920, height: 1080 };
 
   const assetByPath = new Map(project.assets.map((asset) => [asset.path, asset]));
   const trackOrder = new Map(project.tracks.map((track, index) => [track.id, index]));
@@ -93,7 +98,8 @@ async function buildExportPlan(project, temporaryPaths) {
   fs.mkdirSync(temporaryPaths.supportDirectory, { recursive: true });
   const inputArgs = [];
   const filters = [
-    `color=c=black:s=1920x1080:r=30:d=${filterNumber(duration)}[canvas0]`,
+    `color=c=black:s=${canvas.width}x${canvas.height}:r=30:` +
+      `d=${filterNumber(duration)}[canvas0]`,
   ];
   const audioLabels = [];
   const audioCache = new Map();
@@ -131,14 +137,46 @@ async function buildExportPlan(project, temporaryPaths) {
 
     const layer = `layer${index}`;
     const nextVideo = `composite${index + 1}`;
+    const transform = normalizeTransform(clip.transform, clip.trackId);
+    const targetWidth = Math.max(2, Math.round((canvas.width * transform.scale) / 2) * 2);
+    const targetHeight = Math.max(
+      2,
+      Math.round((canvas.height * transform.scale) / 2) * 2,
+    );
+    const horizontalFactor = 1 - transform.crop.left - transform.crop.right;
+    const verticalFactor = 1 - transform.crop.top - transform.crop.bottom;
+    const scaleAndFrame =
+      transform.fitMode === "fill"
+        ? `scale=w=${targetWidth}:h=${targetHeight}:` +
+          "force_original_aspect_ratio=increase:force_divisible_by=2," +
+          `crop=w=${targetWidth}:h=${targetHeight}:x=(iw-${targetWidth})/2:` +
+          `y=(ih-${targetHeight})/2`
+        : `scale=w=${targetWidth}:h=${targetHeight}:` +
+          "force_original_aspect_ratio=decrease:force_divisible_by=2";
+    const crop =
+      `crop=w='trunc(iw*${filterNumber(horizontalFactor)}/2)*2':` +
+      `h='trunc(ih*${filterNumber(verticalFactor)}/2)*2':` +
+      `x='trunc(iw*${filterNumber(transform.crop.left)}/2)*2':` +
+      `y='trunc(ih*${filterNumber(transform.crop.top)}/2)*2'`;
+    const xOffset =
+      transform.crop.left === transform.crop.right
+        ? "0"
+        : `(${filterNumber(transform.crop.left - transform.crop.right)})*` +
+          `w/${filterNumber(horizontalFactor)}/2`;
+    const yOffset =
+      transform.crop.top === transform.crop.bottom
+        ? "0"
+        : `(${filterNumber(transform.crop.top - transform.crop.bottom)})*` +
+          `h/${filterNumber(verticalFactor)}/2`;
     filters.push(
       `[${inputIndex}:v:0]trim=duration=${filterNumber(clipLength)},` +
         `setpts=PTS-STARTPTS+${filterNumber(clip.start)}/TB,fps=30,` +
-        "scale=w=1920:h=1080:force_original_aspect_ratio=decrease:" +
-        `force_divisible_by=2,setsar=1,format=rgba[${layer}]`,
+        `${scaleAndFrame},${crop},setsar=1,format=rgba[${layer}]`,
     );
     filters.push(
-      `[${currentVideo}][${layer}]overlay=x=(W-w)/2:y=(H-h)/2:` +
+      `[${currentVideo}][${layer}]overlay=` +
+        `x='W*${filterNumber(transform.x / 100)}-w/2+${xOffset}':` +
+        `y='H*${filterNumber(transform.y / 100)}-h/2+${yOffset}':` +
         `eof_action=pass:shortest=0:enable='between(t,${filterNumber(clip.start)},` +
         `${filterNumber(clipEnd(clip))})'[${nextVideo}]`,
     );
@@ -201,6 +239,7 @@ async function buildExportPlan(project, temporaryPaths) {
   }
 
   return {
+    canvas,
     duration,
     filterGraph: filters.join(";"),
     inputArgs,
@@ -343,7 +382,10 @@ async function exportProject(project, outputPath, options = {}) {
   try {
     await runFfmpeg(args, plan.duration, options.onProgress);
     removeMoovMetadataBoxes(temporaryPaths.output);
-    const verification = await verifyFile(temporaryPaths.output);
+    const verification = await verifyFile(temporaryPaths.output, {
+      width: plan.canvas.width,
+      height: plan.canvas.height,
+    });
     if (!verification.ok) {
       throw new Error(`Export failed privacy verification:\n- ${verification.issues.join("\n- ")}`);
     }

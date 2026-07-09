@@ -6,7 +6,7 @@ strict privacy verifier from Phase 1.
 ## Export profile
 
 - MP4 container.
-- 1920x1080.
+- Landscape 1920x1080 or portrait 1080x1920.
 - 30 fps.
 - H.264 High Profile, yuv420p, BT.709.
 - AAC stereo at 48 kHz.

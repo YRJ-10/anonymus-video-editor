@@ -70,6 +70,14 @@
             </div>
 
             <div class="preview-actions">
+              <div class="canvas-switch" aria-label="Project orientation">
+                <button id="canvas-landscape" type="button" title="Landscape 1920×1080">
+                  16:9
+                </button>
+                <button id="canvas-portrait" type="button" title="Portrait 1080×1920">
+                  9:16
+                </button>
+              </div>
               <button id="add-to-timeline" class="secondary-button" type="button" disabled>
                 ＋ Add to timeline
               </button>
@@ -79,6 +87,12 @@
               <button id="edit-text" class="secondary-button" type="button" disabled>
                 Edit text
               </button>
+              <div class="transform-controls">
+                <button id="transform-fit" type="button" disabled>Fit</button>
+                <button id="transform-fill" type="button" disabled>Fill</button>
+                <button id="transform-crop" type="button" disabled>Crop</button>
+                <button id="transform-reset" type="button" disabled>Reset</button>
+              </div>
               <div class="zoom-controls" aria-label="Preview zoom">
                 <button id="zoom-out" type="button" title="Zoom out">−</button>
                 <button id="zoom-fit" type="button" title="Reset preview">Fit</button>
@@ -99,6 +113,12 @@
               <video id="video-preview" class="preview-media" preload="metadata"></video>
               <img id="image-preview" class="preview-media" alt="Selected media preview" />
               <div id="overlay-stage" class="overlay-stage"></div>
+              <div id="transform-box" class="transform-box">
+                <span class="transform-handle nw" data-handle="nw"></span>
+                <span class="transform-handle ne" data-handle="ne"></span>
+                <span class="transform-handle sw" data-handle="sw"></span>
+                <span class="transform-handle se" data-handle="se"></span>
+              </div>
             </div>
           </div>
 
@@ -228,6 +248,29 @@
         <div id="export-verification" class="export-verification"></div>
         <button id="close-export" type="button" hidden>Done</button>
       </div>
+    </dialog>
+
+    <dialog id="crop-dialog" class="text-dialog crop-dialog">
+      <form id="crop-form" method="dialog">
+        <div class="dialog-heading">
+          <div>
+            <span class="eyebrow">NON-DESTRUCTIVE</span>
+            <h2>Crop clip</h2>
+          </div>
+          <button id="close-crop-dialog" class="icon-button" type="button">×</button>
+        </div>
+        <div class="crop-grid">
+          <label>Left <input id="crop-left" type="range" min="0" max="90" value="0" /></label>
+          <label>Right <input id="crop-right" type="range" min="0" max="90" value="0" /></label>
+          <label>Top <input id="crop-top" type="range" min="0" max="90" value="0" /></label>
+          <label>Bottom <input id="crop-bottom" type="range" min="0" max="90" value="0" /></label>
+        </div>
+        <p>Crop hides the selected edges without changing the source file.</p>
+        <div class="dialog-actions">
+          <button id="cancel-crop" type="button">Cancel</button>
+          <button class="primary-button" type="submit">Apply crop</button>
+        </div>
+      </form>
     </dialog>
 
     <script src="./timeline-model.js"></script>

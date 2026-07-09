@@ -19,6 +19,21 @@ const elements = {
   exportStage: document.querySelector("#export-stage"),
   exportVerification: document.querySelector("#export-verification"),
   closeExport: document.querySelector("#close-export"),
+  canvasLandscape: document.querySelector("#canvas-landscape"),
+  canvasPortrait: document.querySelector("#canvas-portrait"),
+  transformFit: document.querySelector("#transform-fit"),
+  transformFill: document.querySelector("#transform-fill"),
+  transformCrop: document.querySelector("#transform-crop"),
+  transformReset: document.querySelector("#transform-reset"),
+  transformBox: document.querySelector("#transform-box"),
+  cropDialog: document.querySelector("#crop-dialog"),
+  cropForm: document.querySelector("#crop-form"),
+  cropLeft: document.querySelector("#crop-left"),
+  cropRight: document.querySelector("#crop-right"),
+  cropTop: document.querySelector("#crop-top"),
+  cropBottom: document.querySelector("#crop-bottom"),
+  closeCropDialog: document.querySelector("#close-crop-dialog"),
+  cancelCrop: document.querySelector("#cancel-crop"),
   addMedia: document.querySelector("#add-media"),
   addToTimeline: document.querySelector("#add-to-timeline"),
   addText: document.querySelector("#add-text"),
@@ -90,6 +105,9 @@ const state = {
   clipboard: null,
   statusTimer: null,
   exportInProgress: false,
+  canvas: null,
+  mediaTransformDrag: null,
+  cropOriginal: null,
 };
 
 function activeMediaElement() {
@@ -128,6 +146,62 @@ function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
+function currentCanvas() {
+  return (
+    state.canvas || {
+      orientation: "landscape",
+      width: 1920,
+      height: 1080,
+      aspectRatio: "16:9",
+    }
+  );
+}
+
+function updateCanvasSurface() {
+  const canvas = currentCanvas();
+  const availableWidth = Math.max(1, elements.viewport.clientWidth - 48);
+  const availableHeight = Math.max(1, elements.viewport.clientHeight - 38);
+  const ratio = canvas.width / canvas.height;
+  let width = availableWidth;
+  let height = width / ratio;
+  if (height > availableHeight) {
+    height = availableHeight;
+    width = height * ratio;
+  }
+  elements.compositionSurface.style.width = `${Math.round(width)}px`;
+  elements.compositionSurface.style.height = `${Math.round(height)}px`;
+  elements.canvasLandscape.classList.toggle(
+    "active",
+    canvas.orientation === "landscape",
+  );
+  elements.canvasPortrait.classList.toggle("active", canvas.orientation === "portrait");
+  renderTransformBox();
+}
+
+function setCanvas(orientation, options = {}) {
+  const portrait = orientation === "portrait";
+  state.canvas = portrait
+    ? { orientation: "portrait", width: 1080, height: 1920, aspectRatio: "9:16" }
+    : { orientation: "landscape", width: 1920, height: 1080, aspectRatio: "16:9" };
+  updateCanvasSurface();
+  if (state.timelinePreview) renderComposition();
+  if (options.record !== false) commitEdit();
+  if (options.detected) {
+    showStatus(
+      `Canvas detected: ${portrait ? "Portrait 9:16" : "Landscape 16:9"}`,
+    );
+  }
+}
+
+function detectCanvasFromAsset(asset, record = true) {
+  if (state.canvas || !asset?.width || !asset?.height) return false;
+  setCanvas(asset.height > asset.width ? "portrait" : "landscape", {
+    record,
+    detected: true,
+  });
+  return true;
+}
+
 function captureEditingState() {
   return {
     assets: structuredClone(state.assets),
@@ -139,6 +213,7 @@ function captureEditingState() {
     playhead: state.playhead,
     pixelsPerSecond: state.pixelsPerSecond,
     timelinePreview: state.timelinePreview,
+    canvas: structuredClone(state.canvas),
   };
 }
 
@@ -171,6 +246,7 @@ function restoreEditingState(snapshot) {
   state.playhead = snapshot.playhead;
   state.pixelsPerSecond = snapshot.pixelsPerSecond;
   state.timelinePreview = snapshot.timelinePreview;
+  state.canvas = structuredClone(snapshot.canvas);
   state.loadedAssetPath = null;
   state.baseClipId = null;
   state.compositionSignature = "";
@@ -181,6 +257,7 @@ function restoreEditingState(snapshot) {
   elements.image.classList.remove("visible");
   elements.overlayStage.replaceChildren();
   elements.timelineZoom.value = String(state.pixelsPerSecond);
+  updateCanvasSurface();
 
   renderAssets();
   renderTimeline();
@@ -226,20 +303,24 @@ function showStatus(message, error = false) {
 }
 
 function projectPayload() {
+  const canvas = currentCanvas();
   return {
     format: "anon-editor-project",
     version: 1,
-    assets: state.assets.map(({ path, name, type, duration }) => ({
+    assets: state.assets.map(({ path, name, type, duration, width, height }) => ({
       path,
       name,
       type,
       duration,
+      width,
+      height,
     })),
     tracks: structuredClone(state.tracks),
     clips: structuredClone(state.clips),
     activeTrackId: state.activeTrackId,
     playhead: state.playhead,
     pixelsPerSecond: state.pixelsPerSecond,
+    canvas,
   };
 }
 
@@ -265,6 +346,7 @@ async function openProject() {
     state.activeTrackId = project.activeTrackId;
     state.playhead = project.playhead;
     state.pixelsPerSecond = project.pixelsPerSecond;
+    state.canvas = project.canvas;
     state.selectedPath = project.assets[0]?.path || null;
     state.selectedClipId = null;
     state.timelinePreview = project.clips.length > 0;
@@ -376,6 +458,114 @@ function applyTransform() {
   elements.compositionSurface.style.transform =
     `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
   elements.zoomValue.textContent = `${Math.round(state.zoom * 100)}%`;
+}
+
+function mediaFramePercent(clip) {
+  const canvas = currentCanvas();
+  const asset = assetForClip(clip);
+  const transform = Timeline.normalizeTransform(clip.transform, clip.trackId);
+  if (transform.fitMode === "fill" || !asset?.width || !asset?.height) {
+    return { width: 100, height: 100 };
+  }
+
+  const assetRatio = asset.width / asset.height;
+  const canvasRatio = canvas.width / canvas.height;
+  if (assetRatio >= canvasRatio) {
+    return { width: 100, height: (100 * canvasRatio) / assetRatio };
+  }
+  return { width: (100 * assetRatio) / canvasRatio, height: 100 };
+}
+
+function applyMediaClipStyle(element, clip) {
+  const transform = Timeline.normalizeTransform(clip.transform, clip.trackId);
+  const frame = mediaFramePercent(clip);
+  element.classList.add("timeline-layer");
+  element.style.inset = "auto";
+  element.style.left = `${transform.x}%`;
+  element.style.top = `${transform.y}%`;
+  element.style.width = `${frame.width}%`;
+  element.style.height = `${frame.height}%`;
+  element.style.maxWidth = "none";
+  element.style.maxHeight = "none";
+  element.style.objectFit = transform.fitMode === "fill" ? "cover" : "fill";
+  element.style.transform = `translate(-50%, -50%) scale(${transform.scale})`;
+  element.style.clipPath =
+    `inset(${transform.crop.top * 100}% ${transform.crop.right * 100}% ` +
+    `${transform.crop.bottom * 100}% ${transform.crop.left * 100}%)`;
+}
+
+function resetMediaClipStyle(element) {
+  element.classList.remove("timeline-layer");
+  for (const property of [
+    "inset",
+    "left",
+    "top",
+    "width",
+    "height",
+    "maxWidth",
+    "maxHeight",
+    "objectFit",
+    "transform",
+    "clipPath",
+  ]) {
+    element.style[property] = "";
+  }
+}
+
+function selectedMediaClip() {
+  const clip = selectedClip();
+  return clip && clip.type !== "text" ? clip : null;
+}
+
+function updateTransformControls() {
+  const clip = selectedMediaClip();
+  const enabled =
+    Boolean(clip) &&
+    state.timelinePreview &&
+    state.playhead >= clip.start &&
+    state.playhead < Timeline.clipEnd(clip);
+  for (const button of [
+    elements.transformFit,
+    elements.transformFill,
+    elements.transformCrop,
+    elements.transformReset,
+  ]) {
+    button.disabled = !enabled;
+  }
+  const mode = clip
+    ? Timeline.normalizeTransform(clip.transform, clip.trackId).fitMode
+    : null;
+  elements.transformFit.classList.toggle("active", enabled && mode === "fit");
+  elements.transformFill.classList.toggle("active", enabled && mode === "fill");
+}
+
+function renderTransformBox() {
+  const clip = selectedMediaClip();
+  const active =
+    clip &&
+    state.timelinePreview &&
+    state.playhead >= clip.start &&
+    state.playhead < Timeline.clipEnd(clip);
+  elements.transformBox.classList.toggle("visible", Boolean(active));
+  updateTransformControls();
+  if (!active) return;
+
+  const transform = Timeline.normalizeTransform(clip.transform, clip.trackId);
+  const frame = mediaFramePercent(clip);
+  const visibleWidth =
+    frame.width * transform.scale * (1 - transform.crop.left - transform.crop.right);
+  const visibleHeight =
+    frame.height * transform.scale * (1 - transform.crop.top - transform.crop.bottom);
+  const centerX =
+    transform.x +
+    ((transform.crop.left - transform.crop.right) * frame.width * transform.scale) / 2;
+  const centerY =
+    transform.y +
+    ((transform.crop.top - transform.crop.bottom) * frame.height * transform.scale) / 2;
+  elements.transformBox.style.left = `${centerX}%`;
+  elements.transformBox.style.top = `${centerY}%`;
+  elements.transformBox.style.width = `${Math.max(0.5, visibleWidth)}%`;
+  elements.transformBox.style.height = `${Math.max(0.5, visibleHeight)}%`;
 }
 
 function resetView() {
@@ -529,6 +719,8 @@ function selectAsset(asset, options = {}) {
 
   if (!keepView) resetView();
   if (!fromComposition) {
+    resetMediaClipStyle(elements.video);
+    resetMediaClipStyle(elements.image);
     state.baseClipId = null;
     state.compositionSignature = "";
     elements.overlayStage.replaceChildren();
@@ -553,13 +745,17 @@ async function addMedia() {
       };
       state.assets.push(asset);
       added = true;
+    } else if (!asset.width && picked.width) {
+      asset.width = picked.width;
+      asset.height = picked.height;
     }
 
+    const detectedCanvas = detectCanvasFromAsset(asset, false);
     state.selectedClipId = null;
     state.timelinePreview = false;
     selectAsset(asset);
     renderTimeline();
-    if (added) commitEdit();
+    if (added || detectedCanvas) commitEdit();
   } finally {
     elements.addMedia.disabled = false;
   }
@@ -968,6 +1164,10 @@ function renderComposition() {
       });
       elements.selectedName.textContent = "Timeline composition";
       applyPendingVideoSeek();
+      applyMediaClipStyle(
+        asset.type === "video" ? elements.video : elements.image,
+        baseClip,
+      );
     } else {
       elements.video.pause();
       elements.video.classList.remove("visible");
@@ -1000,7 +1200,8 @@ function renderComposition() {
       text.style.top = `${clip.y}%`;
       text.style.color = clip.color;
       const previewHeight = elements.compositionSurface.clientHeight || 540;
-      text.style.fontSize = `${Math.max(10, (clip.fontSize * previewHeight) / 1080)}px`;
+      text.style.fontSize =
+        `${Math.max(8, (clip.fontSize * previewHeight) / currentCanvas().height)}px`;
       text.style.zIndex = String(zIndex);
       text.addEventListener("pointerdown", (event) =>
         beginTextPositionDrag(event, clip.id),
@@ -1022,6 +1223,7 @@ function renderComposition() {
     layer.dataset.clipId = clip.id;
     layer.style.zIndex = String(zIndex);
     layer.src = asset.url;
+    applyMediaClipStyle(layer, clip);
 
     if (asset.type === "video") {
       layer.muted = true;
@@ -1044,6 +1246,7 @@ function renderComposition() {
 
   if (baseClip?.type === "video") updatePlayback();
   updateTimelineControls();
+  renderTransformBox();
 }
 
 function syncCompositionDuringPlayback() {
@@ -1115,9 +1318,145 @@ function applyTextDialog() {
   commitEdit();
 }
 
+function beginMediaTransform(event) {
+  const clip = selectedMediaClip();
+  if (!clip || event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const transform = Timeline.normalizeTransform(clip.transform, clip.trackId);
+  const rect = elements.compositionSurface.getBoundingClientRect();
+  const centerX = rect.left + (transform.x / 100) * rect.width;
+  const centerY = rect.top + (transform.y / 100) * rect.height;
+  const resize = Boolean(event.target.dataset.handle);
+  state.mediaTransformDrag = {
+    clipId: clip.id,
+    mode: resize ? "resize" : "move",
+    startX: event.clientX,
+    startY: event.clientY,
+    centerX,
+    centerY,
+    startDistance: Math.max(1, Math.hypot(event.clientX - centerX, event.clientY - centerY)),
+    transform,
+  };
+}
+
+function updateMediaTransform(event) {
+  const drag = state.mediaTransformDrag;
+  if (!drag) return;
+  const rect = elements.compositionSurface.getBoundingClientRect();
+  if (drag.mode === "move") {
+    const x = drag.transform.x + ((event.clientX - drag.startX) / rect.width) * 100;
+    const y = drag.transform.y + ((event.clientY - drag.startY) / rect.height) * 100;
+    state.clips = Timeline.updateClipTransform(state.clips, drag.clipId, { x, y });
+  } else {
+    const distance = Math.hypot(event.clientX - drag.centerX, event.clientY - drag.centerY);
+    state.clips = Timeline.updateClipTransform(state.clips, drag.clipId, {
+      scale: drag.transform.scale * (distance / drag.startDistance),
+    });
+  }
+  renderComposition();
+}
+
+function endMediaTransform() {
+  if (!state.mediaTransformDrag) return;
+  state.mediaTransformDrag = null;
+  commitEdit();
+}
+
+function applyTransformMode(fitMode) {
+  const clip = selectedMediaClip();
+  if (!clip) return;
+  state.clips = Timeline.updateClipTransform(state.clips, clip.id, { fitMode });
+  renderComposition();
+  commitEdit();
+}
+
+function resetSelectedTransform() {
+  const clip = selectedMediaClip();
+  if (!clip) return;
+  const reset = Timeline.normalizeTransform(null, clip.trackId);
+  state.clips = Timeline.updateClipTransform(state.clips, clip.id, reset);
+  renderComposition();
+  commitEdit();
+}
+
+function cropValues() {
+  return {
+    left: Number(elements.cropLeft.value) / 100,
+    right: Number(elements.cropRight.value) / 100,
+    top: Number(elements.cropTop.value) / 100,
+    bottom: Number(elements.cropBottom.value) / 100,
+  };
+}
+
+function previewCrop() {
+  const clip = selectedMediaClip();
+  if (!clip) return;
+  state.clips = Timeline.updateClipTransform(state.clips, clip.id, {
+    crop: cropValues(),
+  });
+  renderComposition();
+}
+
+function openCropDialog() {
+  const clip = selectedMediaClip();
+  if (!clip) return;
+  const crop = Timeline.normalizeTransform(clip.transform, clip.trackId).crop;
+  state.cropOriginal = structuredClone(crop);
+  elements.cropLeft.value = String(Math.round(crop.left * 100));
+  elements.cropRight.value = String(Math.round(crop.right * 100));
+  elements.cropTop.value = String(Math.round(crop.top * 100));
+  elements.cropBottom.value = String(Math.round(crop.bottom * 100));
+  elements.cropDialog.showModal();
+}
+
+function cancelCropDialog() {
+  const clip = selectedMediaClip();
+  if (clip && state.cropOriginal) {
+    state.clips = Timeline.updateClipTransform(state.clips, clip.id, {
+      crop: state.cropOriginal,
+    });
+    renderComposition();
+  }
+  state.cropOriginal = null;
+  elements.cropDialog.close();
+}
+
+function applyCropDialog() {
+  previewCrop();
+  state.cropOriginal = null;
+  elements.cropDialog.close();
+  commitEdit();
+}
+
 elements.addMedia.addEventListener("click", addMedia);
 elements.addToTimeline.addEventListener("click", addSelectedAssetToTimeline);
 elements.addTrack.addEventListener("click", addTrack);
+elements.canvasLandscape.addEventListener("click", () => setCanvas("landscape"));
+elements.canvasPortrait.addEventListener("click", () => setCanvas("portrait"));
+elements.transformFit.addEventListener("click", () => applyTransformMode("fit"));
+elements.transformFill.addEventListener("click", () => applyTransformMode("fill"));
+elements.transformCrop.addEventListener("click", openCropDialog);
+elements.transformReset.addEventListener("click", resetSelectedTransform);
+elements.transformBox.addEventListener("pointerdown", beginMediaTransform);
+for (const input of [
+  elements.cropLeft,
+  elements.cropRight,
+  elements.cropTop,
+  elements.cropBottom,
+]) {
+  input.addEventListener("input", previewCrop);
+}
+elements.cropForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  applyCropDialog();
+});
+elements.closeCropDialog.addEventListener("click", cancelCropDialog);
+elements.cancelCrop.addEventListener("click", cancelCropDialog);
+elements.cropDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  cancelCropDialog();
+});
 elements.exportVideo.addEventListener("click", exportTimeline);
 elements.closeExport.addEventListener("click", () => elements.exportDialog.close());
 elements.openProject.addEventListener("click", openProject);
@@ -1147,12 +1486,25 @@ window.anonEditor.onExportProgress(({ progress, stage }) => {
 
 elements.video.addEventListener("loadedmetadata", () => {
   const asset = state.assets.find((candidate) => candidate.path === state.loadedAssetPath);
-  if (asset?.type === "video") asset.duration = elements.video.duration;
+  if (asset?.type === "video") {
+    asset.duration = elements.video.duration;
+    asset.width = elements.video.videoWidth;
+    asset.height = elements.video.videoHeight;
+    if (detectCanvasFromAsset(asset, false)) commitEdit();
+  }
   elements.seek.max = String(elements.video.duration || 0);
   applyPendingVideoSeek();
   updatePlayback();
   updateAddToTimelineButton();
   renderAssets();
+});
+
+elements.image.addEventListener("load", () => {
+  const asset = state.assets.find((candidate) => candidate.path === state.loadedAssetPath);
+  if (asset?.type !== "image") return;
+  asset.width = elements.image.naturalWidth;
+  asset.height = elements.image.naturalHeight;
+  if (detectCanvasFromAsset(asset, false)) commitEdit();
 });
 
 elements.video.addEventListener("timeupdate", () => {
@@ -1274,15 +1626,18 @@ elements.playhead.addEventListener("pointerdown", (event) => {
 document.addEventListener("pointermove", (event) => {
   handleTimelinePointerMove(event);
   updateTextPosition(event);
+  updateMediaTransform(event);
 });
 document.addEventListener("pointerup", () => {
   endTimelineDrag();
+  endMediaTransform();
   const movedText = Boolean(state.textDrag);
   state.textDrag = null;
   if (movedText) commitEdit();
 });
 document.addEventListener("pointercancel", () => {
   endTimelineDrag();
+  endMediaTransform();
   const movedText = Boolean(state.textDrag);
   state.textDrag = null;
   if (movedText) commitEdit();
@@ -1346,7 +1701,13 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-window.addEventListener("resize", renderTimeline);
+window.addEventListener("resize", () => {
+  renderTimeline();
+  updateCanvasSurface();
+});
 state.history = History.create(captureEditingState());
 updateEditControls();
-requestAnimationFrame(renderTimeline);
+requestAnimationFrame(() => {
+  renderTimeline();
+  updateCanvasSurface();
+});

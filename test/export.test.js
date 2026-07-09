@@ -6,6 +6,7 @@ const path = require("node:path");
 const test = require("node:test");
 const { exportProject } = require("../src/export-project");
 const { runProcess } = require("../src/process");
+const { probeFile } = require("../src/probe");
 
 const tempRoot = path.join(process.cwd(), ".tmp-export-tests");
 const sourceFile = path.join(tempRoot, "SOURCE_SECRET_CAMERA.mp4");
@@ -121,4 +122,54 @@ test("project export composites tracks and text, then passes strict privacy veri
   assert.doesNotMatch(bytes, /SOURCE_SECRET/i);
   assert.doesNotMatch(bytes, /\bx264\b/i);
   assert.doesNotMatch(bytes, /\bLavf\d/i);
+});
+
+test("portrait export applies fill, resize, position, and crop at 1080x1920", async () => {
+  const portraitOutput = path.join(tempRoot, "anonymous-portrait.mp4");
+  const project = {
+    canvas: {
+      orientation: "portrait",
+      width: 1080,
+      height: 1920,
+      aspectRatio: "9:16",
+    },
+    assets: [
+      {
+        path: sourceFile,
+        name: "SOURCE_SECRET_CAMERA.mp4",
+        type: "video",
+        duration: 1.2,
+        width: 320,
+        height: 240,
+      },
+    ],
+    tracks: [{ id: "v1", name: "V1" }],
+    clips: [
+      {
+        id: "portrait",
+        assetPath: sourceFile,
+        assetName: "SOURCE_SECRET_CAMERA.mp4",
+        type: "video",
+        trackId: "v1",
+        start: 0,
+        sourceIn: 0,
+        sourceOut: 0.6,
+        assetDuration: 1.2,
+        transform: {
+          x: 44,
+          y: 57,
+          scale: 0.8,
+          fitMode: "fill",
+          crop: { left: 0.1, right: 0.05, top: 0.08, bottom: 0.12 },
+        },
+      },
+    ],
+  };
+
+  const result = await exportProject(project, portraitOutput, { force: true });
+  assert.equal(result.verification.ok, true);
+  const probe = await probeFile(portraitOutput);
+  const video = probe.streams.find((stream) => stream.codec_type === "video");
+  assert.equal(video.width, 1080);
+  assert.equal(video.height, 1920);
 });

@@ -12,6 +12,8 @@ Development currently covers:
 - **Phase 4:** multi-track video/photo overlays and positioned text annotations.
 - **Phase 5:** copy/paste, undo/redo, and local `.anonproj` project files.
 - **Phase 6:** composited 1080p export with mandatory privacy verification.
+- **Phase 7:** automatic portrait/landscape canvas plus resize, position,
+  Fit/Fill, and non-destructive crop.
 
 See [the Phase 1 contract](docs/phase-1-contract.md) for its strict output
 allowlist and [the Phase 2 foundation](docs/phase-2-foundation.md) for the
@@ -21,7 +23,9 @@ in [the Phase 4 overlays](docs/phase-4-overlays.md). Local editing state and
 project persistence are covered by
 [the Phase 5 project guide](docs/phase-5-project-editing.md). The final render
 and privacy gate are defined in
-[the Phase 6 export guide](docs/phase-6-export.md).
+[the Phase 6 export guide](docs/phase-6-export.md). Canvas selection and visual
+transforms are documented in
+[the Phase 7 canvas guide](docs/phase-7-canvas-transform.md).
 
 ## Requirements
 

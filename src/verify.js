@@ -53,9 +53,11 @@ function checkStreamTags(issues, stream, expectedHandler) {
   }
 }
 
-async function verifyFile(filePath) {
+async function verifyFile(filePath, expectations = {}) {
   const issues = [];
   const resolvedPath = path.resolve(filePath);
+  const expectedWidth = expectations.width || 1920;
+  const expectedHeight = expectations.height || 1080;
   let probe;
   let mp4;
 
@@ -96,8 +98,10 @@ async function verifyFile(filePath) {
   for (const stream of videoStreams) {
     checkStreamTags(issues, stream, "VideoHandler");
     if (stream.codec_name !== "h264") issues.push("video codec must be H.264");
-    if (stream.width !== 1920 || stream.height !== 1080) {
-      issues.push(`video dimensions must be normalized to 1920x1080`);
+    if (stream.width !== expectedWidth || stream.height !== expectedHeight) {
+      issues.push(
+        `video dimensions must be normalized to ${expectedWidth}x${expectedHeight}`,
+      );
     }
     if (stream.pix_fmt !== "yuv420p") issues.push("video pixel format must be yuv420p");
     if (stream.avg_frame_rate !== "30/1") issues.push("video frame rate must be 30 fps");

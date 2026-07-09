@@ -23,6 +23,41 @@
     return clip.start + clipDuration(clip);
   }
 
+  function normalizeTransform(transform, trackId = "v1") {
+    const crop = transform?.crop || {};
+    let left = clampNumber(crop.left, 0, 0.9);
+    let right = clampNumber(crop.right, 0, 0.9);
+    let top = clampNumber(crop.top, 0, 0.9);
+    let bottom = clampNumber(crop.bottom, 0, 0.9);
+    if (left + right > 0.95) {
+      const ratio = 0.95 / (left + right);
+      left *= ratio;
+      right *= ratio;
+    }
+    if (top + bottom > 0.95) {
+      const ratio = 0.95 / (top + bottom);
+      top *= ratio;
+      bottom *= ratio;
+    }
+
+    return {
+      x: roundTime(clampNumber(transform?.x ?? 50, 0, 100)),
+      y: roundTime(clampNumber(transform?.y ?? 50, 0, 100)),
+      scale: roundTime(
+        clampNumber(transform?.scale ?? (trackId === "v1" ? 1 : 0.5), 0.05, 4),
+      ),
+      fitMode: ["fit", "fill"].includes(transform?.fitMode)
+        ? transform.fitMode
+        : "fit",
+      crop: {
+        left: roundTime(left),
+        right: roundTime(right),
+        top: roundTime(top),
+        bottom: roundTime(bottom),
+      },
+    };
+  }
+
   function createClip({ id, asset, start = 0, trackId = "v1" }) {
     if (!id) throw new Error("A clip id is required");
     if (!asset?.path || !asset?.name || !asset?.type) {
@@ -42,6 +77,7 @@
       sourceIn: 0,
       sourceOut: roundTime(duration),
       assetDuration: roundTime(duration),
+      transform: normalizeTransform(null, trackId),
     };
   }
 
@@ -217,6 +253,24 @@
     });
   }
 
+  function updateClipTransform(clips, clipId, changes) {
+    return updateClip(clips, clipId, (clip) => {
+      if (clip.type === "text") return clip;
+      const current = normalizeTransform(clip.transform, clip.trackId);
+      return {
+        ...clip,
+        transform: normalizeTransform(
+          {
+            ...current,
+            ...changes,
+            crop: changes.crop ? { ...current.crop, ...changes.crop } : current.crop,
+          },
+          clip.trackId,
+        ),
+      };
+    });
+  }
+
   return Object.freeze({
     MIN_CLIP_DURATION,
     appendClip,
@@ -228,11 +282,13 @@
     findClipAt,
     findClipsAt,
     moveClip,
+    normalizeTransform,
     splitClip,
     timelineEnd,
     trackEnd,
     trimClipLeft,
     trimClipRight,
+    updateClipTransform,
     updateTextClip,
   });
 });

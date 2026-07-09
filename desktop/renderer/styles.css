@@ -348,7 +348,7 @@ button {
 .preview-actions {
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: 7px;
 }
 
 .secondary-button {
@@ -361,6 +361,45 @@ button {
   font-size: 10px;
   font-weight: 700;
   cursor: pointer;
+}
+
+.canvas-switch,
+.transform-controls {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid #30323a;
+  border-radius: 7px;
+  background: #17181c;
+}
+
+.canvas-switch button,
+.transform-controls button {
+  height: 23px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #858892;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.canvas-switch button:hover,
+.transform-controls button:hover:not(:disabled) {
+  background: #292a31;
+  color: #d8dae0;
+}
+
+.canvas-switch button.active,
+.transform-controls button.active {
+  background: #4e438f;
+  color: #f2efff;
+}
+
+.transform-controls button:disabled {
+  cursor: default;
+  opacity: 0.3;
 }
 
 .secondary-button:hover:not(:disabled) {
@@ -433,6 +472,9 @@ button {
   place-items: center;
   width: calc(100% - 48px);
   height: calc(100% - 38px);
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 0 0 1px #30323a;
   transform-origin: center;
   will-change: transform;
 }
@@ -483,6 +525,14 @@ button {
   display: block;
 }
 
+.preview-media.timeline-layer {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+}
+
 .overlay-stage {
   position: absolute;
   inset: 0;
@@ -518,6 +568,56 @@ button {
   border: 1px dashed rgba(255, 255, 255, 0.75);
   border-radius: 5px;
   background: rgba(0, 0, 0, 0.15);
+}
+
+.transform-box {
+  position: absolute;
+  z-index: 40;
+  display: none;
+  border: 1px solid #9e92ff;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  cursor: move;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+}
+
+.transform-box.visible {
+  display: block;
+}
+
+.transform-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 1px solid #292442;
+  border-radius: 2px;
+  background: #b3aaff;
+}
+
+.transform-handle.nw {
+  top: -6px;
+  left: -6px;
+  cursor: nwse-resize;
+}
+
+.transform-handle.ne {
+  top: -6px;
+  right: -6px;
+  cursor: nesw-resize;
+}
+
+.transform-handle.sw {
+  bottom: -6px;
+  left: -6px;
+  cursor: nesw-resize;
+}
+
+.transform-handle.se {
+  right: -6px;
+  bottom: -6px;
+  cursor: nwse-resize;
 }
 
 .playback-bar {
@@ -985,6 +1085,22 @@ kbd {
   display: grid;
   grid-template-columns: 1fr 1fr 90px;
   gap: 10px;
+}
+
+.crop-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.crop-grid label {
+  display: grid;
+  gap: 6px;
+}
+
+.crop-grid input {
+  width: 100%;
+  accent-color: #7465e4;
 }
 
 .text-dialog p {

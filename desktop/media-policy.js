@@ -42,9 +42,24 @@ function shouldBlockRequest(url) {
   }
 }
 
+function displayDimensions(stream) {
+  let width = Number(stream?.width) || 0;
+  let height = Number(stream?.height) || 0;
+  const sideRotation = (stream?.side_data_list || []).find((entry) =>
+    Number.isFinite(Number(entry.rotation)),
+  )?.rotation;
+  const rotation = Number(sideRotation ?? stream?.tags?.rotate ?? 0);
+  const normalizedRotation = ((rotation % 360) + 360) % 360;
+  if (normalizedRotation === 90 || normalizedRotation === 270) {
+    [width, height] = [height, width];
+  }
+  return { width, height };
+}
+
 module.exports = {
   IMAGE_EXTENSIONS,
   VIDEO_EXTENSIONS,
   classifyMediaFile,
+  displayDimensions,
   shouldBlockRequest,
 };

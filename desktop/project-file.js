@@ -1,5 +1,7 @@
 "use strict";
 
+const { normalizeTransform } = require("./renderer/timeline-model");
+
 const PROJECT_FORMAT = "anon-editor-project";
 const PROJECT_VERSION = 1;
 const MAX_PROJECT_BYTES = 10 * 1024 * 1024;
@@ -38,6 +40,8 @@ function normalizeProject(input) {
       name: cleanString(asset.name, 512),
       type,
       duration: asset.duration == null ? null : Math.max(0, finite(asset.duration)),
+      width: asset.width == null ? null : Math.max(1, Math.round(finite(asset.width, 1))),
+      height: asset.height == null ? null : Math.max(1, Math.round(finite(asset.height, 1))),
     };
   });
 
@@ -88,6 +92,8 @@ function normalizeProject(input) {
       normalized.color = /^#[0-9a-f]{6}$/i.test(clip.color) ? clip.color : "#ffffff";
       normalized.x = Math.min(100, Math.max(0, finite(clip.x, 50)));
       normalized.y = Math.min(100, Math.max(0, finite(clip.y, 50)));
+    } else {
+      normalized.transform = normalizeTransform(clip.transform, trackId);
     }
     return normalized;
   });
@@ -105,6 +111,20 @@ function normalizeProject(input) {
     activeTrackId,
     playhead: Math.max(0, finite(input.playhead)),
     pixelsPerSecond: Math.min(240, Math.max(40, finite(input.pixelsPerSecond, 90))),
+    canvas:
+      input.canvas?.orientation === "portrait"
+        ? {
+            orientation: "portrait",
+            width: 1080,
+            height: 1920,
+            aspectRatio: "9:16",
+          }
+        : {
+            orientation: "landscape",
+            width: 1920,
+            height: 1080,
+            aspectRatio: "16:9",
+          },
   };
 }
 

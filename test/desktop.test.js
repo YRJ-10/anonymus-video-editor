@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
   classifyMediaFile,
+  displayDimensions,
   shouldBlockRequest,
 } = require("../desktop/media-policy");
 
@@ -12,6 +13,21 @@ test("desktop media picker classifies supported video and photo formats", () => 
   assert.equal(classifyMediaFile("D:\\Media\\photo.JPEG"), "image");
   assert.equal(classifyMediaFile("D:\\Media\\notes.txt"), null);
   assert.equal(classifyMediaFile("D:\\Media\\fake.mp4.exe"), null);
+});
+
+test("display dimensions account for quarter-turn rotation", () => {
+  assert.deepEqual(displayDimensions({ width: 1920, height: 1080 }), {
+    width: 1920,
+    height: 1080,
+  });
+  assert.deepEqual(
+    displayDimensions({
+      width: 1920,
+      height: 1080,
+      side_data_list: [{ rotation: -90 }],
+    }),
+    { width: 1080, height: 1920 },
+  );
 });
 
 test("desktop network boundary blocks remote protocols", () => {

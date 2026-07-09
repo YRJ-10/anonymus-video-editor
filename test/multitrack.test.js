@@ -84,3 +84,27 @@ test("all overlapping clips are returned for composition", () => {
     ["base", "overlay"],
   );
 });
+
+test("media transforms use base and overlay defaults and normalize crop", () => {
+  const base = Timeline.createClip({ id: "base", asset: videoAsset, trackId: "v1" });
+  const overlay = Timeline.createClip({
+    id: "overlay",
+    asset: videoAsset,
+    trackId: "v2",
+  });
+  assert.equal(base.transform.scale, 1);
+  assert.equal(overlay.transform.scale, 0.5);
+
+  const updated = Timeline.updateClipTransform([overlay], "overlay", {
+    x: 120,
+    y: -5,
+    scale: 10,
+    fitMode: "fill",
+    crop: { left: 0.8, right: 0.8 },
+  })[0];
+  assert.equal(updated.transform.x, 100);
+  assert.equal(updated.transform.y, 0);
+  assert.equal(updated.transform.scale, 4);
+  assert.equal(updated.transform.fitMode, "fill");
+  assert.ok(updated.transform.crop.left + updated.transform.crop.right <= 0.95);
+});

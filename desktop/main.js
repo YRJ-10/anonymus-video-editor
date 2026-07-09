@@ -16,8 +16,10 @@ const {
   IMAGE_EXTENSIONS,
   VIDEO_EXTENSIONS,
   classifyMediaFile,
+  displayDimensions,
   shouldBlockRequest,
 } = require("./media-policy");
+const { probeFile } = require("../src/probe");
 const {
   parseProject,
   serializeProject,
@@ -95,6 +97,12 @@ function createWindow() {
               document.querySelector("#export-video") &&
               document.querySelector("#export-dialog")
             ),
+            hasPhase7Ui: Boolean(
+              document.querySelector("#canvas-landscape") &&
+              document.querySelector("#canvas-portrait") &&
+              document.querySelector("#transform-box") &&
+              document.querySelector("#crop-dialog")
+            ),
           })
         `);
         const ready = Object.values(result).every(Boolean);
@@ -139,11 +147,24 @@ async function pickMedia() {
     return null;
   }
 
+  let dimensions = { width: 0, height: 0 };
+  try {
+    const probe = await probeFile(filePath);
+    const visualStream = (probe.streams || []).find(
+      (stream) => stream.codec_type === "video",
+    );
+    dimensions = displayDimensions(visualStream);
+  } catch {
+    // The renderer can still attempt to load the media and read its dimensions.
+  }
+
   return Object.freeze({
     name: path.basename(filePath),
     path: filePath,
     type,
     url: pathToFileURL(filePath).href,
+    width: dimensions.width || null,
+    height: dimensions.height || null,
   });
 }
 
