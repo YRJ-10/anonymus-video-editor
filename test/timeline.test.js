@@ -28,6 +28,25 @@ test("timeline magnet snaps near grid lines and leaves distant times free", () =
   assert.equal(Timeline.snapTime(0.02, 100), 0);
 });
 
+test("detached audio inherits the video source range and audio level", () => {
+  const video = {
+    ...Timeline.createClip({ id: "video", asset: videoAsset }),
+    start: 2,
+    sourceIn: 1,
+    sourceOut: 8,
+    volume: 1.4,
+    muted: true,
+  };
+  const audio = Timeline.createAudioClip({ id: "audio", videoClip: video, trackId: "a1" });
+  assert.equal(audio.type, "audio");
+  assert.equal(audio.trackId, "a1");
+  assert.equal(audio.start, 2);
+  assert.equal(audio.sourceIn, 1);
+  assert.equal(audio.sourceOut, 8);
+  assert.equal(audio.volume, 1.4);
+  assert.equal(audio.muted, true);
+});
+
 test("timeline split preserves total duration and source continuity", () => {
   const clip = Timeline.createClip({ id: "left", asset: videoAsset });
   const result = Timeline.splitClip([clip], "left", 4, "right");

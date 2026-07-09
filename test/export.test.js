@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
-const { exportProject } = require("../src/export-project");
+const { buildExportPlan, exportProject } = require("../src/export-project");
 const { runProcess } = require("../src/process");
 const { probeFile } = require("../src/probe");
 
@@ -172,4 +172,60 @@ test("portrait export applies fill, resize, position, and crop at 1080x1920", as
   const video = probe.streams.find((stream) => stream.codec_type === "video");
   assert.equal(video.width, 1080);
   assert.equal(video.height, 1920);
+});
+
+test("detached audio is mixed once with its independent volume", async () => {
+  const project = {
+    assets: [
+      {
+        path: sourceFile,
+        name: "SOURCE_SECRET_CAMERA.mp4",
+        type: "video",
+        duration: 1.2,
+      },
+    ],
+    tracks: [
+      { id: "v1", name: "V1", kind: "video" },
+      { id: "a1", name: "A1", kind: "audio" },
+    ],
+    clips: [
+      {
+        id: "video",
+        assetPath: sourceFile,
+        assetName: "SOURCE_SECRET_CAMERA.mp4",
+        type: "video",
+        trackId: "v1",
+        start: 0,
+        sourceIn: 0,
+        sourceOut: 1,
+        assetDuration: 1.2,
+        audioDetached: true,
+      },
+      {
+        id: "audio",
+        assetPath: sourceFile,
+        assetName: "SOURCE_SECRET_CAMERA.mp4",
+        type: "audio",
+        trackId: "a1",
+        start: 0.1,
+        sourceIn: 0,
+        sourceOut: 0.8,
+        assetDuration: 1.2,
+        volume: 0.5,
+        muted: false,
+      },
+    ],
+  };
+  const plan = await buildExportPlan(project, {
+    output: path.join(tempRoot, "detached-render.mp4"),
+    supportDirectory: path.join(tempRoot, "detached-support"),
+  });
+  assert.match(plan.filterGraph, /volume=0\.5,adelay=.*\[detachedAudio0\]/);
+  assert.doesNotMatch(plan.filterGraph, /\[audio0\]/);
+
+  const output = path.join(tempRoot, "detached-anonymous.mp4");
+  const result = await exportProject(project, output, { force: true });
+  assert.equal(result.verification.ok, true);
+  const probe = await probeFile(output);
+  assert.equal(probe.streams.filter((stream) => stream.codec_type === "audio").length, 1);
 });

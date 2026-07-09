@@ -134,6 +134,22 @@
               aria-label="Video position"
             />
             <span id="duration" class="timecode">00:00</span>
+            <div class="audio-controls" aria-label="Selected clip audio">
+              <button id="detach-audio" type="button" disabled>Detach audio</button>
+              <button id="mute-audio" type="button" disabled>Mute</button>
+              <input
+                id="audio-volume"
+                type="range"
+                min="0"
+                max="200"
+                step="1"
+                value="100"
+                disabled
+                aria-label="Audio volume"
+              />
+              <span id="audio-volume-value">100%</span>
+              <button id="reset-audio" type="button" disabled>Reset</button>
+            </div>
           </div>
 
           <div id="timeline-resizer" class="timeline-resizer" title="Drag to resize timeline" aria-label="Resize timeline">

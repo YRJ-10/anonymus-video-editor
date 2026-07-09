@@ -118,6 +118,14 @@ function createWindow() {
               document.querySelector("#preview-fullscreen") &&
               typeof window.TimelineModel?.snapTime === "function"
             ),
+            hasPhase10Ui: Boolean(
+              document.querySelector("#detach-audio") &&
+              document.querySelector("#audio-volume") &&
+              document.querySelector("#mute-audio") &&
+              document.querySelector("#reset-audio") &&
+              typeof window.TimelineModel?.createAudioClip === "function" &&
+              typeof window.TimelineModel?.updateAudioClip === "function"
+            ),
           })
         `);
         const ready = Object.values(result).every(Boolean);
@@ -163,12 +171,14 @@ async function pickMedia() {
   }
 
   let dimensions = { width: 0, height: 0 };
+  let hasAudio = false;
   try {
     const probe = await probeFile(filePath);
     const visualStream = (probe.streams || []).find(
       (stream) => stream.codec_type === "video",
     );
     dimensions = displayDimensions(visualStream);
+    hasAudio = (probe.streams || []).some((stream) => stream.codec_type === "audio");
   } catch {
     // The renderer can still attempt to load the media and read its dimensions.
   }
@@ -180,6 +190,7 @@ async function pickMedia() {
     url: pathToFileURL(filePath).href,
     width: dimensions.width || null,
     height: dimensions.height || null,
+    hasAudio,
   });
 }
 
@@ -220,15 +231,25 @@ async function openProject() {
   const source = result.filePaths[0];
   const project = parseProject(await fsPromises.readFile(source, "utf8"));
   const missingPaths = [];
-  project.assets = project.assets.map((asset) => {
+  project.assets = await Promise.all(project.assets.map(async (asset) => {
     const missing = !fs.existsSync(asset.path);
     if (missing) missingPaths.push(asset.path);
+    let hasAudio = asset.hasAudio;
+    if (!missing && asset.type === "video") {
+      try {
+        const probe = await probeFile(asset.path);
+        hasAudio = (probe.streams || []).some((stream) => stream.codec_type === "audio");
+      } catch {
+        // Preserve the saved value if the source cannot be probed.
+      }
+    }
     return {
       ...asset,
+      hasAudio,
       missing,
       url: pathToFileURL(asset.path).href,
     };
-  });
+  }));
   currentProjectPath = source;
   return {
     project,

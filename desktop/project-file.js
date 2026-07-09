@@ -42,6 +42,7 @@ function normalizeProject(input) {
       duration: asset.duration == null ? null : Math.max(0, finite(asset.duration)),
       width: asset.width == null ? null : Math.max(1, Math.round(finite(asset.width, 1))),
       height: asset.height == null ? null : Math.max(1, Math.round(finite(asset.height, 1))),
+      hasAudio: Boolean(asset.hasAudio),
     };
   });
 
@@ -53,6 +54,7 @@ function normalizeProject(input) {
     return {
       id,
       name: cleanString(track.name, 64) || `V${index + 1}`,
+      kind: track.kind === "audio" || id.toLowerCase().startsWith("a") ? "audio" : "video",
     };
   });
 
@@ -63,7 +65,9 @@ function normalizeProject(input) {
     const type = clip?.type;
     const trackId = cleanString(clip?.trackId, 64);
     if (!id || clipIds.has(id)) throw new Error("Clip ids must be unique");
-    if (!["video", "image", "text"].includes(type)) throw new Error("Unsupported clip type");
+    if (!["video", "image", "text", "audio"].includes(type)) {
+      throw new Error("Unsupported clip type");
+    }
     if (!trackIds.has(trackId)) throw new Error("Clip references an unknown track");
     if (type !== "text" && !assetPaths.has(clip.assetPath)) {
       throw new Error("Clip references an unknown asset");
@@ -92,8 +96,14 @@ function normalizeProject(input) {
       normalized.color = /^#[0-9a-f]{6}$/i.test(clip.color) ? clip.color : "#ffffff";
       normalized.x = Math.min(100, Math.max(0, finite(clip.x, 50)));
       normalized.y = Math.min(100, Math.max(0, finite(clip.y, 50)));
+    } else if (type === "audio") {
+      normalized.volume = Math.min(2, Math.max(0, finite(clip.volume, 1)));
+      normalized.muted = Boolean(clip.muted);
     } else {
       normalized.transform = normalizeTransform(clip.transform, trackId);
+      normalized.volume = Math.min(2, Math.max(0, finite(clip.volume, 1)));
+      normalized.muted = Boolean(clip.muted);
+      normalized.audioDetached = Boolean(clip.audioDetached);
     }
     return normalized;
   });
@@ -110,7 +120,7 @@ function normalizeProject(input) {
     clips,
     activeTrackId,
     playhead: Math.max(0, finite(input.playhead)),
-    pixelsPerSecond: Math.min(240, Math.max(40, finite(input.pixelsPerSecond, 90))),
+    pixelsPerSecond: Math.min(240, Math.max(0.25, finite(input.pixelsPerSecond, 90))),
     canvas:
       input.canvas?.orientation === "portrait"
         ? {

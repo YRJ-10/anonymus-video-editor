@@ -25,6 +25,11 @@ function filterNumber(value) {
   return Number(value).toFixed(4).replace(/\.?0+$/, "");
 }
 
+function clipVolume(clip) {
+  if (clip.muted) return 0;
+  return Math.min(2, Math.max(0, Number(clip.volume ?? 1)));
+}
+
 function escapeFilterPath(filePath) {
   return filePath
     .replaceAll("\\", "/")
@@ -90,6 +95,9 @@ async function buildExportPlan(project, temporaryPaths) {
         (trackOrder.get(left.trackId) || 0) - (trackOrder.get(right.trackId) || 0);
       return trackDifference || left.start - right.start;
     });
+  const detachedAudioClips = project.clips
+    .filter((clip) => clip.type === "audio")
+    .sort((left, right) => left.start - right.start);
   const fontFile = textClips.length > 0 ? findSystemFont() : null;
   if (textClips.length > 0 && !fontFile) {
     throw new Error("No supported system font was found for text rendering");
@@ -184,18 +192,51 @@ async function buildExportPlan(project, temporaryPaths) {
 
     if (
       asset.type === "video" &&
+      !clip.audioDetached &&
       (await hasAudioStream(asset.path, audioCache))
     ) {
       const audioLabel = `audio${index}`;
       const delay = Math.max(0, Math.round(Number(clip.start) * 1000));
       filters.push(
-        `[${inputIndex}:a:0]atrim=duration=${filterNumber(clipLength)},` +
+          `[${inputIndex}:a:0]atrim=duration=${filterNumber(clipLength)},` +
           "asetpts=PTS-STARTPTS,aresample=48000," +
           `aformat=sample_rates=48000:channel_layouts=stereo,` +
+          `volume=${filterNumber(clipVolume(clip))},` +
           `adelay=delays=${delay}:all=1[${audioLabel}]`,
       );
       audioLabels.push(audioLabel);
     }
+  }
+
+  for (let index = 0; index < detachedAudioClips.length; index += 1) {
+    const clip = detachedAudioClips[index];
+    const asset = assetByPath.get(clip.assetPath);
+    if (!asset) throw new Error(`Missing asset for audio clip: ${clip.assetName}`);
+    if (!fs.existsSync(asset.path)) throw new Error(`Media file is missing: ${asset.path}`);
+    if (!(await hasAudioStream(asset.path, audioCache))) {
+      throw new Error(`Audio stream is missing: ${clip.assetName}`);
+    }
+
+    const clipLength = clipDuration(clip);
+    const inputIndex = visualClips.length + index;
+    inputArgs.push(
+      "-ss",
+      filterNumber(clip.sourceIn),
+      "-t",
+      filterNumber(clipLength),
+      "-i",
+      asset.path,
+    );
+    const audioLabel = `detachedAudio${index}`;
+    const delay = Math.max(0, Math.round(Number(clip.start) * 1000));
+    filters.push(
+      `[${inputIndex}:a:0]atrim=duration=${filterNumber(clipLength)},` +
+        "asetpts=PTS-STARTPTS,aresample=48000," +
+        "aformat=sample_rates=48000:channel_layouts=stereo," +
+        `volume=${filterNumber(clipVolume(clip))},` +
+        `adelay=delays=${delay}:all=1[${audioLabel}]`,
+    );
+    audioLabels.push(audioLabel);
   }
 
   for (let index = 0; index < textClips.length; index += 1) {

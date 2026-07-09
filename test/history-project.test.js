@@ -81,3 +81,46 @@ test("project parser rejects clips with unknown assets", () => {
 
   assert.throws(() => parseProject(JSON.stringify(invalid)), /unknown asset/);
 });
+
+test("project files preserve detached audio tracks and volume", () => {
+  const project = {
+    format: PROJECT_FORMAT,
+    version: PROJECT_VERSION,
+    assets: [
+      {
+        path: "D:\\Media\\clip.mp4",
+        name: "clip.mp4",
+        type: "video",
+        duration: 10,
+        hasAudio: true,
+      },
+    ],
+    tracks: [
+      { id: "v1", name: "V1", kind: "video" },
+      { id: "a1", name: "A1", kind: "audio" },
+    ],
+    clips: [
+      {
+        id: "audio",
+        assetPath: "D:\\Media\\clip.mp4",
+        assetName: "clip.mp4",
+        type: "audio",
+        trackId: "a1",
+        start: 1,
+        sourceIn: 0,
+        sourceOut: 4,
+        assetDuration: 10,
+        volume: 1.5,
+        muted: false,
+      },
+    ],
+    activeTrackId: "a1",
+    pixelsPerSecond: 8,
+  };
+  const parsed = parseProject(serializeProject(project));
+  assert.equal(parsed.tracks[1].kind, "audio");
+  assert.equal(parsed.clips[0].type, "audio");
+  assert.equal(parsed.clips[0].volume, 1.5);
+  assert.equal(parsed.assets[0].hasAudio, true);
+  assert.equal(parsed.pixelsPerSecond, 8);
+});

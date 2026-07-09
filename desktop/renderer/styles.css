@@ -649,13 +649,60 @@ button {
 
 .playback-bar {
   display: grid;
-  grid-template-columns: 34px 48px minmax(100px, 1fr) 48px;
+  grid-template-columns: 34px 48px minmax(100px, 1fr) 48px auto;
   align-items: center;
   gap: 9px;
   padding: 0 16px;
   border-top: 1px solid #25272d;
   border-bottom: 1px solid #292b32;
   background: #15161a;
+}
+
+.audio-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.audio-controls button {
+  height: 25px;
+  padding: 0 7px;
+  border: 1px solid #34363e;
+  border-radius: 5px;
+  background: #202127;
+  color: #aeb1ba;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.audio-controls button:hover:not(:disabled) {
+  border-color: #5d52b6;
+  background: #29263d;
+}
+
+.audio-controls button.active {
+  border-color: #9a6570;
+  background: #492931;
+  color: #ffd8df;
+}
+
+.audio-controls button:disabled,
+.audio-controls input:disabled {
+  cursor: default;
+  opacity: 0.3;
+}
+
+.audio-controls input {
+  width: 82px;
+  accent-color: #7464ed;
+}
+
+.audio-controls span {
+  min-width: 34px;
+  color: #858892;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 9px;
+  text-align: right;
 }
 
 .play-button:disabled {
@@ -963,6 +1010,17 @@ kbd {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent 35%),
     linear-gradient(135deg, #285560, #213c43);
+}
+
+.timeline-clip.audio {
+  border-color: #39745f;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent 35%),
+    repeating-linear-gradient(90deg, #245543 0 3px, #1f493a 3px 6px);
+}
+
+.timeline-clip.audio .clip-body strong {
+  color: #d8ffed;
 }
 
 .timeline-clip.selected {

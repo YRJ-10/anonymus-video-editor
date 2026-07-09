@@ -124,6 +124,26 @@
     };
   }
 
+  function createAudioClip({ id, videoClip, trackId = "a1" }) {
+    if (!id) throw new Error("An audio clip id is required");
+    if (!videoClip || videoClip.type !== "video") {
+      throw new Error("A video clip is required to detach audio");
+    }
+    return {
+      id,
+      assetPath: videoClip.assetPath,
+      assetName: videoClip.assetName,
+      type: "audio",
+      trackId,
+      start: roundTime(videoClip.start),
+      sourceIn: roundTime(videoClip.sourceIn),
+      sourceOut: roundTime(videoClip.sourceOut),
+      assetDuration: roundTime(videoClip.assetDuration),
+      volume: clampNumber(videoClip.volume ?? 1, 0, 2),
+      muted: Boolean(videoClip.muted),
+    };
+  }
+
   function clampNumber(value, minimum, maximum) {
     return Math.min(maximum, Math.max(minimum, finiteNumber(Number(value), minimum)));
   }
@@ -280,11 +300,26 @@
     });
   }
 
+  function updateAudioClip(clips, clipId, changes) {
+    return updateClip(clips, clipId, (clip) => {
+      if (!["video", "audio"].includes(clip.type)) return clip;
+      return {
+        ...clip,
+        volume:
+          changes.volume === undefined
+            ? clampNumber(clip.volume ?? 1, 0, 2)
+            : roundTime(clampNumber(changes.volume, 0, 2)),
+        muted: changes.muted === undefined ? Boolean(clip.muted) : Boolean(changes.muted),
+      };
+    });
+  }
+
   return Object.freeze({
     MIN_CLIP_DURATION,
     appendClip,
     clipDuration,
     clipEnd,
+    createAudioClip,
     createClip,
     createTextClip,
     deleteClip,
@@ -299,6 +334,7 @@
     trimClipLeft,
     trimClipRight,
     updateClipTransform,
+    updateAudioClip,
     updateTextClip,
   });
 });
