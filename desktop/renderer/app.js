@@ -61,6 +61,8 @@ const elements = {
   deleteClip: document.querySelector("#delete-clip"),
   timelineZoom: document.querySelector("#timeline-zoom"),
   timelineTimecode: document.querySelector("#timeline-timecode"),
+  editorArea: document.querySelector(".editor-area"),
+  timelineResizer: document.querySelector("#timeline-resizer"),
   timelineScroll: document.querySelector("#timeline-scroll"),
   timelineContent: document.querySelector("#timeline-content"),
   timelineRuler: document.querySelector("#timeline-ruler"),
@@ -96,6 +98,7 @@ const state = {
   playhead: 0,
   pixelsPerSecond: 90,
   timelineDrag: null,
+  timelineResizeDrag: null,
   timelinePreview: false,
   baseClipId: null,
   compositionSignature: "",
@@ -784,7 +787,9 @@ function rulerStep() {
   if (state.pixelsPerSecond >= 180) return 0.5;
   if (state.pixelsPerSecond >= 90) return 1;
   if (state.pixelsPerSecond >= 55) return 2;
-  return 5;
+  if (state.pixelsPerSecond >= 20) return 5;
+  if (state.pixelsPerSecond >= 8) return 10;
+  return 30;
 }
 
 function updateTimelineControls() {
@@ -794,7 +799,7 @@ function updateTimelineControls() {
     state.playhead > clip.start + Timeline.MIN_CLIP_DURATION &&
     state.playhead < Timeline.clipEnd(clip) - Timeline.MIN_CLIP_DURATION;
   elements.splitClip.disabled = !canSplit;
-  elements.deleteClip.disabled = !clip;
+  elements.deleteClip.disabled = !clip && !selectedAsset();
   elements.editText.disabled = clip?.type !== "text";
   elements.timelineTimecode.textContent = formatTimelineTime(state.playhead);
   updateEditControls();
@@ -1042,14 +1047,91 @@ function splitAtPlayhead() {
 }
 
 function deleteSelectedClip() {
-  if (!state.selectedClipId) return;
-  state.clips = Timeline.deleteClip(state.clips, state.selectedClipId);
-  state.selectedClipId = null;
-  state.playhead = Math.min(state.playhead, Timeline.timelineEnd(state.clips));
+  if (state.selectedClipId) {
+    state.clips = Timeline.deleteClip(state.clips, state.selectedClipId);
+    state.selectedClipId = null;
+    state.playhead = Math.min(state.playhead, Timeline.timelineEnd(state.clips));
+    elements.video.pause();
+    renderTimeline();
+    renderComposition();
+    commitEdit();
+    return;
+  }
+
+  const asset = selectedAsset();
+  if (!asset) return;
+  const referencedClips = state.clips.filter((clip) => clip.assetPath === asset.path);
+  if (
+    referencedClips.length > 0 &&
+    !window.confirm(
+      `"${asset.name}" is used by ${referencedClips.length} timeline clip(s). Delete the media and those clips?`,
+    )
+  ) {
+    return;
+  }
+
   elements.video.pause();
+  state.assets = state.assets.filter((candidate) => candidate.path !== asset.path);
+  state.clips = state.clips.filter((clip) => clip.assetPath !== asset.path);
+  state.selectedPath = null;
+  state.loadedAssetPath = null;
+  state.timelinePreview = state.clips.length > 0;
+  state.baseClipId = null;
+  state.compositionSignature = "";
+  state.playhead = Math.min(state.playhead, Timeline.timelineEnd(state.clips));
+  elements.video.removeAttribute("src");
+  elements.image.removeAttribute("src");
+  elements.video.classList.remove("visible");
+  elements.image.classList.remove("visible");
+  elements.overlayStage.replaceChildren();
+  elements.previewEmpty.classList.remove("hidden");
+  elements.selectedName.textContent = "Nothing selected";
+  elements.play.disabled = true;
+  elements.seek.disabled = true;
+  updateAddToTimelineButton();
+  renderAssets();
   renderTimeline();
-  renderComposition();
+  if (state.timelinePreview) renderComposition();
+  else updateTimelineControls();
   commitEdit();
+}
+
+function setTimelineZoom(nextPixelsPerSecond, anchorClientX = null) {
+  const oldPixelsPerSecond = state.pixelsPerSecond;
+  const rect = elements.timelineScroll.getBoundingClientRect();
+  const anchorX =
+    anchorClientX === null ? elements.timelineScroll.clientWidth / 2 : anchorClientX - rect.left;
+  const anchorTime =
+    (elements.timelineScroll.scrollLeft + anchorX) / Math.max(oldPixelsPerSecond, 0.01);
+  state.pixelsPerSecond = clamp(nextPixelsPerSecond, 0.25, 240);
+  elements.timelineZoom.value = String(state.pixelsPerSecond);
+  renderTimeline();
+  elements.timelineScroll.scrollLeft = anchorTime * state.pixelsPerSecond - anchorX;
+}
+
+function fitTimelineToArea() {
+  const totalSeconds = Math.max(15, Timeline.timelineEnd(state.clips) + 5);
+  const availableWidth = Math.max(1, elements.timelineScroll.clientWidth - 8);
+  state.pixelsPerSecond = clamp(availableWidth / totalSeconds, 0.25, 240);
+  elements.timelineZoom.value = String(state.pixelsPerSecond);
+  renderTimeline();
+  elements.timelineScroll.scrollLeft = 0;
+}
+
+function resizeTimeline(event) {
+  const drag = state.timelineResizeDrag;
+  if (!drag) return;
+  const maximum = Math.max(150, window.innerHeight * 0.65);
+  const height = clamp(drag.startHeight + drag.startY - event.clientY, 150, maximum);
+  elements.editorArea.style.setProperty("--timeline-height", `${height}px`);
+  renderTimeline();
+  updateCanvasSurface();
+}
+
+function endTimelineResize() {
+  if (!state.timelineResizeDrag) return;
+  state.timelineResizeDrag = null;
+  elements.timelineResizer.classList.remove("dragging");
 }
 
 function handleTimelinePointerMove(event) {
@@ -1535,7 +1617,8 @@ elements.video.addEventListener("pause", () => {
 });
 elements.video.addEventListener("ended", updatePlayback);
 
-elements.play.addEventListener("click", async () => {
+async function togglePlayback() {
+  if (elements.play.disabled || !elements.video.classList.contains("visible")) return;
   const clip = state.timelinePreview
     ? state.clips.find((candidate) => candidate.id === state.baseClipId)
     : selectedClip();
@@ -1544,9 +1627,17 @@ elements.play.addEventListener("click", async () => {
     state.playhead = clip.start;
   }
 
-  if (elements.video.paused) await elements.video.play();
+  if (elements.video.paused) {
+    try {
+      await elements.video.play();
+    } catch (error) {
+      showStatus(error.message || "Video cannot be played", true);
+    }
+  }
   else elements.video.pause();
-});
+}
+
+elements.play.addEventListener("click", togglePlayback);
 
 elements.seek.addEventListener("input", () => {
   const clip = state.timelinePreview
@@ -1627,10 +1718,12 @@ document.addEventListener("pointermove", (event) => {
   handleTimelinePointerMove(event);
   updateTextPosition(event);
   updateMediaTransform(event);
+  resizeTimeline(event);
 });
 document.addEventListener("pointerup", () => {
   endTimelineDrag();
   endMediaTransform();
+  endTimelineResize();
   const movedText = Boolean(state.textDrag);
   state.textDrag = null;
   if (movedText) commitEdit();
@@ -1638,6 +1731,7 @@ document.addEventListener("pointerup", () => {
 document.addEventListener("pointercancel", () => {
   endTimelineDrag();
   endMediaTransform();
+  endTimelineResize();
   const movedText = Boolean(state.textDrag);
   state.textDrag = null;
   if (movedText) commitEdit();
@@ -1647,19 +1741,33 @@ elements.splitClip.addEventListener("click", splitAtPlayhead);
 elements.deleteClip.addEventListener("click", deleteSelectedClip);
 
 elements.timelineZoom.addEventListener("input", () => {
-  const oldPixelsPerSecond = state.pixelsPerSecond;
-  const centerTime =
-    (elements.timelineScroll.scrollLeft + elements.timelineScroll.clientWidth / 2) /
-    oldPixelsPerSecond;
-  state.pixelsPerSecond = Number(elements.timelineZoom.value);
-  renderTimeline();
-  elements.timelineScroll.scrollLeft =
-    centerTime * state.pixelsPerSecond - elements.timelineScroll.clientWidth / 2;
+  setTimelineZoom(Number(elements.timelineZoom.value));
 });
+
+elements.timelineScroll.addEventListener(
+  "wheel",
+  (event) => {
+    if (!event.ctrlKey) return;
+    event.preventDefault();
+    const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
+    setTimelineZoom(state.pixelsPerSecond * factor, event.clientX);
+  },
+  { passive: false },
+);
 
 elements.timelineScroll.addEventListener("scroll", () => {
   elements.trackLabelList.style.transform =
     `translateY(${-elements.timelineScroll.scrollTop}px)`;
+});
+
+elements.timelineResizer.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  state.timelineResizeDrag = {
+    startY: event.clientY,
+    startHeight: document.querySelector(".timeline-panel").getBoundingClientRect().height,
+  };
+  elements.timelineResizer.classList.add("dragging");
 });
 
 document.addEventListener("keydown", (event) => {
@@ -1692,6 +1800,12 @@ document.addEventListener("keydown", (event) => {
   } else if (command && event.shiftKey && key === "o") {
     event.preventDefault();
     openProject();
+  } else if (!command && event.shiftKey && key === "z") {
+    event.preventDefault();
+    fitTimelineToArea();
+  } else if (!command && event.code === "Space") {
+    event.preventDefault();
+    togglePlayback();
   } else if (key === "s") {
     event.preventDefault();
     splitAtPlayhead();

@@ -24,29 +24,25 @@
         <div class="top-actions">
           <button id="open-project" type="button" title="Open project">Open</button>
           <button id="save-project" type="button" title="Save project (Ctrl+S)">Save</button>
-          <span class="toolbar-divider"></span>
-          <button id="undo" type="button" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
-          <button id="redo" type="button" title="Redo (Ctrl+Y)" disabled>↷ Redo</button>
-          <button id="copy-clip" type="button" title="Copy clip (Ctrl+C)" disabled>Copy</button>
-          <button id="paste-clip" type="button" title="Paste clip (Ctrl+V)" disabled>Paste</button>
-          <span class="toolbar-divider"></span>
-          <button id="add-media" class="primary-button" type="button">
-            <span aria-hidden="true">＋</span>
-            Add media
-          </button>
-          <button id="export-video" class="export-button" type="button" title="Export 1080p">
-            Export
-          </button>
         </div>
 
-        <div class="privacy-status" title="Remote network requests are blocked">
-          <span class="status-dot" aria-hidden="true"></span>
-          Offline
-        </div>
+        <button id="export-video" class="primary-button topbar-export" type="button" title="Export 1080p">
+          Export
+        </button>
       </header>
 
       <main class="workspace">
         <aside class="media-panel" aria-label="Project media">
+          <div class="media-actions">
+            <button id="add-media" class="primary-button" type="button">
+              <span aria-hidden="true">＋</span>
+              Add media
+            </button>
+            <button id="add-to-timeline" class="secondary-button" type="button" disabled>
+              ＋ Add to V1
+            </button>
+          </div>
+
           <div class="panel-heading">
             <div>
               <span class="eyebrow">PROJECT</span>
@@ -78,21 +74,12 @@
                   9:16
                 </button>
               </div>
-              <button id="add-to-timeline" class="secondary-button" type="button" disabled>
-                ＋ Add to timeline
-              </button>
               <button id="add-text" class="secondary-button" type="button">
                 ＋ Text
               </button>
               <button id="edit-text" class="secondary-button" type="button" disabled>
                 Edit text
               </button>
-              <div class="transform-controls">
-                <button id="transform-fit" type="button" disabled>Fit</button>
-                <button id="transform-fill" type="button" disabled>Fill</button>
-                <button id="transform-crop" type="button" disabled>Crop</button>
-                <button id="transform-reset" type="button" disabled>Reset</button>
-              </div>
               <div class="zoom-controls" aria-label="Preview zoom">
                 <button id="zoom-out" type="button" title="Zoom out">−</button>
                 <button id="zoom-fit" type="button" title="Reset preview">Fit</button>
@@ -138,15 +125,41 @@
             <span id="duration" class="timecode">00:00</span>
           </div>
 
+          <div id="timeline-resizer" class="timeline-resizer" title="Drag to resize timeline" aria-label="Resize timeline">
+            <span></span>
+          </div>
+
           <section class="timeline-panel" aria-label="Video timeline">
             <div class="timeline-toolbar">
               <div class="timeline-title">
                 <strong>Timeline</strong>
                 <span id="timeline-timecode">00:00.00</span>
                 <button id="add-track" type="button">＋ Track</button>
+                <div class="transform-controls">
+                  <button id="transform-fit" type="button" disabled>Fit</button>
+                  <button id="transform-fill" type="button" disabled>Fill</button>
+                  <button id="transform-crop" type="button" disabled>Crop</button>
+                  <button id="transform-reset" type="button" disabled>Reset</button>
+                </div>
               </div>
 
               <div class="timeline-edit-actions">
+                <button id="undo" type="button" title="Undo (Ctrl+Z)" disabled>
+                  Undo
+                  <kbd>Ctrl+Z</kbd>
+                </button>
+                <button id="redo" type="button" title="Redo (Ctrl+Y)" disabled>
+                  Redo
+                  <kbd>Ctrl+Y</kbd>
+                </button>
+                <button id="copy-clip" type="button" title="Copy clip (Ctrl+C)" disabled>
+                  Copy
+                  <kbd>Ctrl+C</kbd>
+                </button>
+                <button id="paste-clip" type="button" title="Paste clip (Ctrl+V)" disabled>
+                  Paste
+                  <kbd>Ctrl+V</kbd>
+                </button>
                 <button id="split-clip" type="button" disabled title="Slice at playhead (S)">
                   Slice
                   <kbd>S</kbd>
@@ -162,9 +175,9 @@
                 <input
                   id="timeline-zoom"
                   type="range"
-                  min="40"
+                  min="0.25"
                   max="240"
-                  step="10"
+                  step="0.25"
                   value="90"
                   aria-label="Timeline zoom"
                 />

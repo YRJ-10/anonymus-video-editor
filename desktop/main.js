@@ -103,6 +103,14 @@ function createWindow() {
               document.querySelector("#transform-box") &&
               document.querySelector("#crop-dialog")
             ),
+            hasPhase8Ui: Boolean(
+              document.querySelector(".media-actions #add-media") &&
+              document.querySelector(".media-actions #add-to-timeline") &&
+              document.querySelector(".topbar > #export-video") &&
+              document.querySelector(".timeline-title > .transform-controls") &&
+              document.querySelector(".timeline-edit-actions #undo") &&
+              document.querySelector("#timeline-resizer")
+            ),
           })
         `);
         const ready = Object.values(result).every(Boolean);
