@@ -22,6 +22,12 @@ test("timeline appends clips without losing their source ranges", () => {
   assert.equal(Timeline.clipDuration(clips[1]), 10);
 });
 
+test("timeline magnet snaps near grid lines and leaves distant times free", () => {
+  assert.equal(Timeline.snapTime(4.96, 100), 5);
+  assert.equal(Timeline.snapTime(4.7, 100), 4.7);
+  assert.equal(Timeline.snapTime(0.02, 100), 0);
+});
+
 test("timeline split preserves total duration and source continuity", () => {
   const clip = Timeline.createClip({ id: "left", asset: videoAsset });
   const result = Timeline.splitClip([clip], "left", 4, "right");

@@ -24,6 +24,14 @@
         <div class="top-actions">
           <button id="open-project" type="button" title="Open project">Open</button>
           <button id="save-project" type="button" title="Save project (Ctrl+S)">Save</button>
+          <div class="canvas-switch" aria-label="Project orientation">
+            <button id="canvas-landscape" type="button" title="Landscape 1920×1080">
+              16:9
+            </button>
+            <button id="canvas-portrait" type="button" title="Portrait 1080×1920">
+              9:16
+            </button>
+          </div>
         </div>
 
         <button id="export-video" class="primary-button topbar-export" type="button" title="Export 1080p">
@@ -66,20 +74,14 @@
             </div>
 
             <div class="preview-actions">
-              <div class="canvas-switch" aria-label="Project orientation">
-                <button id="canvas-landscape" type="button" title="Landscape 1920×1080">
-                  16:9
+              <div class="text-controls" aria-label="Text annotation">
+                <button id="add-text" type="button">
+                  ＋ Text
                 </button>
-                <button id="canvas-portrait" type="button" title="Portrait 1080×1920">
-                  9:16
+                <button id="edit-text" type="button" disabled>
+                  Edit text
                 </button>
               </div>
-              <button id="add-text" class="secondary-button" type="button">
-                ＋ Text
-              </button>
-              <button id="edit-text" class="secondary-button" type="button" disabled>
-                Edit text
-              </button>
               <div class="zoom-controls" aria-label="Preview zoom">
                 <button id="zoom-out" type="button" title="Zoom out">−</button>
                 <button id="zoom-fit" type="button" title="Reset preview">Fit</button>
@@ -90,6 +92,15 @@
           </div>
 
           <div id="preview-viewport" class="preview-viewport">
+            <button
+              id="preview-fullscreen"
+              class="preview-fullscreen-button"
+              type="button"
+              title="Fullscreen preview"
+              aria-label="Fullscreen preview"
+            >
+              ⛶
+            </button>
             <div id="preview-empty" class="preview-empty">
               <div class="preview-empty-mark" aria-hidden="true">A</div>
               <strong>Your preview will appear here</strong>

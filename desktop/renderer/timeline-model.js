@@ -23,6 +23,15 @@
     return clip.start + clipDuration(clip);
   }
 
+  function snapTime(time, pixelsPerSecond, gridSeconds = 1, thresholdPixels = 8) {
+    const value = Math.max(0, finiteNumber(time));
+    const grid = Math.max(0.001, finiteNumber(gridSeconds, 1));
+    const pixels = Math.max(0.01, finiteNumber(pixelsPerSecond, 1));
+    const threshold = Math.min(0.2, Math.max(0, thresholdPixels) / pixels);
+    const snapped = Math.round(value / grid) * grid;
+    return Math.abs(snapped - value) <= threshold ? roundTime(snapped) : roundTime(value);
+  }
+
   function normalizeTransform(transform, trackId = "v1") {
     const crop = transform?.crop || {};
     let left = clampNumber(crop.left, 0, 0.9);
@@ -283,6 +292,7 @@
     findClipsAt,
     moveClip,
     normalizeTransform,
+    snapTime,
     splitClip,
     timelineEnd,
     trackEnd,

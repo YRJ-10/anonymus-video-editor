@@ -351,7 +351,8 @@ button {
 }
 
 .canvas-switch,
-.transform-controls {
+.transform-controls,
+.text-controls {
   display: flex;
   gap: 3px;
   padding: 3px;
@@ -361,7 +362,8 @@ button {
 }
 
 .canvas-switch button,
-.transform-controls button {
+.transform-controls button,
+.text-controls button {
   height: 23px;
   padding: 0 6px;
   border: 0;
@@ -373,7 +375,8 @@ button {
 }
 
 .canvas-switch button:hover,
-.transform-controls button:hover:not(:disabled) {
+.transform-controls button:hover:not(:disabled),
+.text-controls button:hover:not(:disabled) {
   background: #292a31;
   color: #d8dae0;
 }
@@ -385,6 +388,16 @@ button {
 }
 
 .transform-controls button:disabled {
+  cursor: default;
+  opacity: 0.3;
+}
+
+.text-controls button {
+  height: 24px;
+  font-weight: 700;
+}
+
+.text-controls button:disabled {
   cursor: default;
   opacity: 0.3;
 }
@@ -447,6 +460,33 @@ button {
   background-size: 14px 14px;
   cursor: grab;
   touch-action: none;
+}
+
+.preview-fullscreen-button {
+  position: absolute;
+  z-index: 20;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 31px;
+  height: 29px;
+  border: 1px solid #3a3c45;
+  border-radius: 6px;
+  background: rgba(21, 22, 26, 0.88);
+  color: #d2d4dc;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.preview-fullscreen-button:hover {
+  border-color: #6255cb;
+  background: #29263d;
+}
+
+.preview-viewport:fullscreen {
+  width: 100vw;
+  height: 100vh;
 }
 
 .preview-viewport.dragging {

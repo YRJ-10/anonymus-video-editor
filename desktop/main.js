@@ -111,6 +111,13 @@ function createWindow() {
               document.querySelector(".timeline-edit-actions #undo") &&
               document.querySelector("#timeline-resizer")
             ),
+            hasPhase9Ui: Boolean(
+              document.querySelector(".top-actions > .canvas-switch") &&
+              document.querySelector(".text-controls #add-text") &&
+              document.querySelector(".text-controls #edit-text") &&
+              document.querySelector("#preview-fullscreen") &&
+              typeof window.TimelineModel?.snapTime === "function"
+            ),
           })
         `);
         const ready = Object.values(result).every(Boolean);

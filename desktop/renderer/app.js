@@ -44,6 +44,7 @@ const elements = {
   emptyAssets: document.querySelector("#empty-assets"),
   selectedName: document.querySelector("#selected-name"),
   viewport: document.querySelector("#preview-viewport"),
+  previewFullscreen: document.querySelector("#preview-fullscreen"),
   compositionSurface: document.querySelector("#composition-surface"),
   overlayStage: document.querySelector("#overlay-stage"),
   previewEmpty: document.querySelector("#preview-empty"),
@@ -99,6 +100,7 @@ const state = {
   pixelsPerSecond: 90,
   timelineDrag: null,
   timelineResizeDrag: null,
+  timelineSnapEnabled: true,
   timelinePreview: false,
   baseClipId: null,
   compositionSignature: "",
@@ -1147,24 +1149,39 @@ function handleTimelinePointerMove(event) {
   if (drag.mode === "move") {
     const lane = document.elementFromPoint(event.clientX, event.clientY)?.closest(".track-lane");
     const targetTrackId = lane?.dataset.trackId || drag.baseClip.trackId;
+    const rawStart = drag.baseClip.start + delta;
+    let targetStart = state.timelineSnapEnabled
+      ? Timeline.snapTime(rawStart, state.pixelsPerSecond)
+      : rawStart;
+    if (state.timelineSnapEnabled && Math.abs(targetStart - rawStart) < 0.00005) {
+      const rawEnd = rawStart + Timeline.clipDuration(drag.baseClip);
+      const snappedEnd = Timeline.snapTime(rawEnd, state.pixelsPerSecond);
+      if (snappedEnd !== rawEnd) targetStart = snappedEnd - Timeline.clipDuration(drag.baseClip);
+    }
     state.activeTrackId = targetTrackId;
     state.clips = Timeline.moveClip(
       drag.baseClips,
       drag.clipId,
-      drag.baseClip.start + delta,
+      targetStart,
       targetTrackId,
     );
   } else if (drag.mode === "trim-left") {
+    const targetTime = drag.baseClip.start + delta;
     state.clips = Timeline.trimClipLeft(
       drag.baseClips,
       drag.clipId,
-      drag.baseClip.start + delta,
+      state.timelineSnapEnabled
+        ? Timeline.snapTime(targetTime, state.pixelsPerSecond)
+        : targetTime,
     );
   } else if (drag.mode === "trim-right") {
+    const targetTime = Timeline.clipEnd(drag.baseClip) + delta;
     state.clips = Timeline.trimClipRight(
       drag.baseClips,
       drag.clipId,
-      Timeline.clipEnd(drag.baseClip) + delta,
+      state.timelineSnapEnabled
+        ? Timeline.snapTime(targetTime, state.pixelsPerSecond)
+        : targetTime,
     );
   }
 
@@ -1639,6 +1656,31 @@ async function togglePlayback() {
 
 elements.play.addEventListener("click", togglePlayback);
 
+async function togglePreviewFullscreen() {
+  try {
+    if (document.fullscreenElement === elements.viewport) await document.exitFullscreen();
+    else await elements.viewport.requestFullscreen();
+  } catch (error) {
+    showStatus(error.message || "Fullscreen preview is unavailable", true);
+  }
+}
+
+elements.previewFullscreen.addEventListener("pointerdown", (event) => event.stopPropagation());
+elements.previewFullscreen.addEventListener("click", togglePreviewFullscreen);
+document.addEventListener("fullscreenchange", () => {
+  const active = document.fullscreenElement === elements.viewport;
+  elements.previewFullscreen.textContent = active ? "×" : "⛶";
+  elements.previewFullscreen.title = active ? "Exit fullscreen preview" : "Fullscreen preview";
+  elements.previewFullscreen.setAttribute(
+    "aria-label",
+    active ? "Exit fullscreen preview" : "Fullscreen preview",
+  );
+  requestAnimationFrame(() => {
+    updateCanvasSurface();
+    applyTransform();
+  });
+});
+
 elements.seek.addEventListener("input", () => {
   const clip = state.timelinePreview
     ? state.clips.find((candidate) => candidate.id === state.baseClipId)
@@ -1806,6 +1848,10 @@ document.addEventListener("keydown", (event) => {
   } else if (!command && event.code === "Space") {
     event.preventDefault();
     togglePlayback();
+  } else if (!command && key === "q") {
+    event.preventDefault();
+    state.timelineSnapEnabled = !state.timelineSnapEnabled;
+    showStatus(`Timeline magnet: ${state.timelineSnapEnabled ? "on" : "off"}`);
   } else if (key === "s") {
     event.preventDefault();
     splitAtPlayhead();
