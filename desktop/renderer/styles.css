@@ -54,15 +54,11 @@ button {
 }
 
 .brand-mark {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 35px;
   height: 35px;
-  border: 1px solid #8071ff;
-  border-radius: 10px;
-  background: linear-gradient(145deg, #7867ff, #4939ba);
   box-shadow: 0 7px 20px rgba(93, 72, 236, 0.3);
-  font-weight: 800;
+  object-fit: contain;
 }
 
 .brand div {
@@ -519,16 +515,12 @@ button {
 }
 
 .preview-empty-mark {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 52px;
   height: 52px;
   margin-bottom: 5px;
-  border: 1px solid #383b44;
-  border-radius: 15px;
-  color: #5e626e;
-  font-size: 21px;
-  font-weight: 800;
+  object-fit: contain;
+  opacity: 0.72;
 }
 
 .preview-empty strong {
@@ -1306,16 +1298,11 @@ kbd {
 }
 
 .export-mark {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 48px;
   height: 48px;
-  border: 1px solid #4cab84;
-  border-radius: 13px;
-  background: linear-gradient(145deg, #288c67, #185f47);
-  box-shadow: 0 8px 25px rgba(35, 131, 95, 0.25);
-  font-size: 18px;
-  font-weight: 800;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 18px rgba(93, 72, 236, 0.3));
 }
 
 .export-dialog h2 {

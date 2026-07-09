@@ -30,6 +30,8 @@ app.commandLine.appendSwitch("disable-background-networking");
 app.commandLine.appendSwitch("disable-component-update");
 app.commandLine.appendSwitch("disable-domain-reliability");
 app.commandLine.appendSwitch("disable-sync");
+app.setName("Anon Editor");
+if (process.platform === "win32") app.setAppUserModelId("com.yrj.anoneditor");
 
 let mainWindow;
 let currentProjectPath = null;
@@ -54,6 +56,7 @@ function createWindow() {
     show: false,
     backgroundColor: "#101114",
     title: "Anon Editor",
+    icon: path.join(__dirname, "..", "appicon.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -126,6 +129,11 @@ function createWindow() {
               document.querySelector("#reset-audio") &&
               typeof window.TimelineModel?.createAudioClip === "function" &&
               typeof window.TimelineModel?.updateAudioClip === "function"
+            ),
+            hasAppIcon: Boolean(
+              document.querySelector('img.brand-mark[src$="appicon.png"]') &&
+              document.querySelector('img.preview-empty-mark[src$="appicon.png"]') &&
+              document.querySelector('img.export-mark[src$="appicon.png"]')
             ),
           })
         `);

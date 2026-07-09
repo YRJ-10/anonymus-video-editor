@@ -1,49 +1,53 @@
 # Anon Editor
 
-Anon Editor is a desktop video editor whose export engine rebuilds media without
-carrying source metadata into the resulting file.
+Anon Editor is a compact desktop video editor that rebuilds exports as verified,
+origin-free MP4 files. It supports local media, multi-track editing, text,
+transform controls, detached audio, and 1080p landscape or portrait export.
 
-Development currently covers:
+## Screenshot
 
-- **Phase 1:** the origin-free export engine.
-- **Phase 2:** the offline desktop shell and local video/photo preview.
-- **Phase 3:** the editable V1 timeline with playhead, move, trim, slice,
-  delete, and timeline zoom.
-- **Phase 4:** multi-track video/photo overlays and positioned text annotations.
-- **Phase 5:** copy/paste, undo/redo, and local `.anonproj` project files.
-- **Phase 6:** composited 1080p export with mandatory privacy verification.
-- **Phase 7:** automatic portrait/landscape canvas plus resize, position,
-  Fit/Fill, and non-destructive crop.
+![Anon Editor interface](./anon-editor-screenshot.png)
 
-See [the Phase 1 contract](docs/phase-1-contract.md) for its strict output
-allowlist and [the Phase 2 foundation](docs/phase-2-foundation.md) for the
-desktop security boundary and preview features. Timeline behavior is documented
-in [the Phase 3 timeline](docs/phase-3-timeline.md), with compositing described
-in [the Phase 4 overlays](docs/phase-4-overlays.md). Local editing state and
-project persistence are covered by
-[the Phase 5 project guide](docs/phase-5-project-editing.md). The final render
-and privacy gate are defined in
-[the Phase 6 export guide](docs/phase-6-export.md). Canvas selection and visual
-transforms are documented in
-[the Phase 7 canvas guide](docs/phase-7-canvas-transform.md).
+Place one application screenshot in the repository root with the filename
+`anon-editor-screenshot.png`.
 
-## Requirements
+## File anonymity
 
-- Node.js 20 or newer
-- FFmpeg and ffprobe on `PATH`
-- Electron (installed through npm)
+Anon Editor removes source and personal metadata instead of copying it into the
+export. Video and audio are re-encoded, timestamps are zeroed, metadata boxes,
+chapters, subtitles, side data, encoder labels, device details, locations, and
+other source tags are rejected.
 
-## Desktop app
+Only normalized technical data required to decode the file remains. Every export
+is written temporarily, inspected, and published only after the strict verifier
+passes. The resulting file contains no unique Anon Editor ID or project marker.
 
-```powershell
-npm.cmd install
-npm.cmd start
+## Technical specifications
+
+- Output: MP4, H.264 High 4.1, 30 FPS, YUV420p, BT.709
+- Canvas: 1920x1080 landscape or 1080x1920 portrait
+- Audio: AAC, 192 kbps, 48 kHz stereo, one normalized output stream
+- Timeline: up to 100 video/audio tracks and 100,000 clips
+- Editing: slice, trim, move, overlays, text, crop, Fit/Fill, volume, mute,
+  detached audio, undo/redo, copy/paste, and timeline snapping
+- Projects: local `.anonproj` files, up to 10 MB
+
+Anon Editor is intended for short-form editing; practical media limits depend on
+available CPU, memory, storage, and source complexity.
+
+## Clone and run
+
+Requirements: Git, Node.js 20+, and FFmpeg/ffprobe available on `PATH`.
+
+```bash
+git clone https://github.com/YRJ-10/anonymus-video-editor.git
+cd anonymus-video-editor
+npm install
+npm start
 ```
 
-## Phase 1 command line
+Run the test suite with:
 
-```powershell
-node src/cli.js sanitize input-video.mp4 anonymous.mp4
-node src/cli.js verify anonymous.mp4
-node --test test/*.test.js
+```bash
+npm test
 ```
