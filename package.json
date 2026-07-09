@@ -1,0 +1,13 @@
+{
+  "name": "anon-editor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Origin-free video export engine for Anon Editor",
+  "scripts": {
+    "anon": "node src/cli.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
