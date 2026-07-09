@@ -11,6 +11,7 @@
     "test:phase1": "node --test test/phase1.test.js",
     "test:phase2": "node --test test/desktop.test.js",
     "test:phase3": "node --test test/timeline.test.js",
+    "test:phase4": "node --test test/multitrack.test.js",
     "test:desktop:smoke": "electron . --smoke-test"
   },
   "devDependencies": {

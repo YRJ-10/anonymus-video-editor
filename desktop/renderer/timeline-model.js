@@ -23,7 +23,7 @@
     return clip.start + clipDuration(clip);
   }
 
-  function createClip({ id, asset, start = 0 }) {
+  function createClip({ id, asset, start = 0, trackId = "v1" }) {
     if (!id) throw new Error("A clip id is required");
     if (!asset?.path || !asset?.name || !asset?.type) {
       throw new Error("A valid media asset is required");
@@ -37,6 +37,7 @@
       assetPath: asset.path,
       assetName: asset.name,
       type: asset.type,
+      trackId,
       start: roundTime(Math.max(0, finiteNumber(start))),
       sourceIn: 0,
       sourceOut: roundTime(duration),
@@ -44,21 +45,66 @@
     };
   }
 
+  function createTextClip({
+    id,
+    text,
+    trackId = "v2",
+    start = 0,
+    duration = 5,
+    fontSize = 48,
+    color = "#ffffff",
+    x = 50,
+    y = 50,
+  }) {
+    if (!id) throw new Error("A text clip id is required");
+    const normalizedText = String(text || "").trim();
+    if (!normalizedText) throw new Error("Text cannot be empty");
+    const normalizedDuration = Math.max(MIN_CLIP_DURATION, finiteNumber(duration, 5));
+
+    return {
+      id,
+      assetPath: null,
+      assetName: normalizedText,
+      type: "text",
+      trackId,
+      start: roundTime(Math.max(0, finiteNumber(start))),
+      sourceIn: 0,
+      sourceOut: roundTime(normalizedDuration),
+      assetDuration: roundTime(normalizedDuration),
+      text: normalizedText,
+      fontSize: Math.round(clampNumber(fontSize, 12, 160)),
+      color: /^#[0-9a-f]{6}$/i.test(color) ? color : "#ffffff",
+      x: roundTime(clampNumber(x, 0, 100)),
+      y: roundTime(clampNumber(y, 0, 100)),
+    };
+  }
+
+  function clampNumber(value, minimum, maximum) {
+    return Math.min(maximum, Math.max(minimum, finiteNumber(Number(value), minimum)));
+  }
+
   function timelineEnd(clips) {
     return clips.reduce((maximum, clip) => Math.max(maximum, clipEnd(clip)), 0);
   }
 
+  function trackEnd(clips, trackId) {
+    return clips
+      .filter((clip) => clip.trackId === trackId)
+      .reduce((maximum, clip) => Math.max(maximum, clipEnd(clip)), 0);
+  }
+
   function appendClip(clips, clip) {
-    return [...clips, { ...clip, start: roundTime(timelineEnd(clips)) }];
+    return [...clips, { ...clip, start: roundTime(trackEnd(clips, clip.trackId)) }];
   }
 
   function updateClip(clips, clipId, updater) {
     return clips.map((clip) => (clip.id === clipId ? updater({ ...clip }) : clip));
   }
 
-  function moveClip(clips, clipId, requestedStart) {
+  function moveClip(clips, clipId, requestedStart, requestedTrackId) {
     return updateClip(clips, clipId, (clip) => ({
       ...clip,
+      trackId: requestedTrackId || clip.trackId,
       start: roundTime(Math.max(0, finiteNumber(requestedStart))),
     }));
   }
@@ -139,18 +185,54 @@
     return null;
   }
 
+  function findClipsAt(clips, timelineTime) {
+    const time = finiteNumber(timelineTime, -1);
+    return clips.filter((clip) => time >= clip.start && time < clipEnd(clip));
+  }
+
+  function updateTextClip(clips, clipId, changes) {
+    return updateClip(clips, clipId, (clip) => {
+      if (clip.type !== "text") return clip;
+      const duration =
+        changes.duration === undefined
+          ? clipDuration(clip)
+          : Math.max(MIN_CLIP_DURATION, finiteNumber(Number(changes.duration), 5));
+      return {
+        ...clip,
+        text:
+          changes.text === undefined ? clip.text : String(changes.text).trim() || clip.text,
+        fontSize:
+          changes.fontSize === undefined
+            ? clip.fontSize
+            : Math.round(clampNumber(changes.fontSize, 12, 160)),
+        color:
+          changes.color === undefined || !/^#[0-9a-f]{6}$/i.test(changes.color)
+            ? clip.color
+            : changes.color,
+        x: changes.x === undefined ? clip.x : roundTime(clampNumber(changes.x, 0, 100)),
+        y: changes.y === undefined ? clip.y : roundTime(clampNumber(changes.y, 0, 100)),
+        sourceOut: roundTime(clip.sourceIn + duration),
+        assetDuration: roundTime(clip.sourceIn + duration),
+      };
+    });
+  }
+
   return Object.freeze({
     MIN_CLIP_DURATION,
     appendClip,
     clipDuration,
     clipEnd,
     createClip,
+    createTextClip,
     deleteClip,
     findClipAt,
+    findClipsAt,
     moveClip,
     splitClip,
     timelineEnd,
+    trackEnd,
     trimClipLeft,
     trimClipRight,
+    updateTextClip,
   });
 });

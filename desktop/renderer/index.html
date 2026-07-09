@@ -60,6 +60,12 @@
               <button id="add-to-timeline" class="secondary-button" type="button" disabled>
                 ＋ Add to timeline
               </button>
+              <button id="add-text" class="secondary-button" type="button">
+                ＋ Text
+              </button>
+              <button id="edit-text" class="secondary-button" type="button" disabled>
+                Edit text
+              </button>
               <div class="zoom-controls" aria-label="Preview zoom">
                 <button id="zoom-out" type="button" title="Zoom out">−</button>
                 <button id="zoom-fit" type="button" title="Reset preview">Fit</button>
@@ -76,8 +82,11 @@
               <span>Open a local video or photo. Nothing is uploaded.</span>
             </div>
 
-            <video id="video-preview" class="preview-media" preload="metadata"></video>
-            <img id="image-preview" class="preview-media" alt="Selected media preview" />
+            <div id="composition-surface" class="composition-surface">
+              <video id="video-preview" class="preview-media" preload="metadata"></video>
+              <img id="image-preview" class="preview-media" alt="Selected media preview" />
+              <div id="overlay-stage" class="overlay-stage"></div>
+            </div>
           </div>
 
           <div class="playback-bar">
@@ -101,6 +110,7 @@
               <div class="timeline-title">
                 <strong>Timeline</strong>
                 <span id="timeline-timecode">00:00.00</span>
+                <button id="add-track" type="button">＋ Track</button>
               </div>
 
               <div class="timeline-edit-actions">
@@ -132,20 +142,13 @@
             <div class="timeline-body">
               <div class="track-labels" aria-hidden="true">
                 <div class="ruler-label"></div>
-                <div class="track-label">
-                  <strong>V1</strong>
-                  <span>Video</span>
-                </div>
+                <div id="track-label-list" class="track-label-list"></div>
               </div>
 
               <div id="timeline-scroll" class="timeline-scroll">
                 <div id="timeline-content" class="timeline-content">
                   <div id="timeline-ruler" class="timeline-ruler"></div>
-                  <div id="track-lane" class="track-lane">
-                    <div id="timeline-empty" class="timeline-empty">
-                      Add selected media to the timeline
-                    </div>
-                  </div>
+                  <div id="track-lanes" class="track-lanes"></div>
                   <div id="playhead" class="playhead" title="Drag playhead">
                     <span></span>
                   </div>
@@ -156,6 +159,47 @@
         </section>
       </main>
     </div>
+
+    <dialog id="text-dialog" class="text-dialog">
+      <form id="text-form" method="dialog">
+        <div class="dialog-heading">
+          <div>
+            <span class="eyebrow">ANNOTATION</span>
+            <h2 id="text-dialog-title">Add text</h2>
+          </div>
+          <button id="close-text-dialog" class="icon-button" type="button" aria-label="Close">
+            ×
+          </button>
+        </div>
+
+        <label>
+          Text
+          <textarea id="text-value" maxlength="240" required></textarea>
+        </label>
+
+        <div class="text-field-row">
+          <label>
+            Duration
+            <input id="text-duration" type="number" min="0.1" max="3600" step="0.1" value="5" />
+          </label>
+          <label>
+            Font size
+            <input id="text-size" type="number" min="12" max="160" step="1" value="48" />
+          </label>
+          <label>
+            Color
+            <input id="text-color" type="color" value="#ffffff" />
+          </label>
+        </div>
+
+        <p>After adding it, drag the text directly in the preview to position it.</p>
+
+        <div class="dialog-actions">
+          <button id="cancel-text" type="button">Cancel</button>
+          <button class="primary-button" type="submit">Apply text</button>
+        </div>
+      </form>
+    </dialog>
 
     <script src="./timeline-model.js"></script>
     <script src="./app.js"></script>

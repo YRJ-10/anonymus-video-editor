@@ -5,11 +5,16 @@ const Timeline = window.TimelineModel;
 const elements = {
   addMedia: document.querySelector("#add-media"),
   addToTimeline: document.querySelector("#add-to-timeline"),
+  addText: document.querySelector("#add-text"),
+  editText: document.querySelector("#edit-text"),
+  addTrack: document.querySelector("#add-track"),
   assetCount: document.querySelector("#asset-count"),
   assetList: document.querySelector("#asset-list"),
   emptyAssets: document.querySelector("#empty-assets"),
   selectedName: document.querySelector("#selected-name"),
   viewport: document.querySelector("#preview-viewport"),
+  compositionSurface: document.querySelector("#composition-surface"),
+  overlayStage: document.querySelector("#overlay-stage"),
   previewEmpty: document.querySelector("#preview-empty"),
   video: document.querySelector("#video-preview"),
   image: document.querySelector("#image-preview"),
@@ -28,9 +33,18 @@ const elements = {
   timelineScroll: document.querySelector("#timeline-scroll"),
   timelineContent: document.querySelector("#timeline-content"),
   timelineRuler: document.querySelector("#timeline-ruler"),
-  trackLane: document.querySelector("#track-lane"),
-  timelineEmpty: document.querySelector("#timeline-empty"),
+  trackLabelList: document.querySelector("#track-label-list"),
+  trackLanes: document.querySelector("#track-lanes"),
   playhead: document.querySelector("#playhead"),
+  textDialog: document.querySelector("#text-dialog"),
+  textForm: document.querySelector("#text-form"),
+  textDialogTitle: document.querySelector("#text-dialog-title"),
+  textValue: document.querySelector("#text-value"),
+  textDuration: document.querySelector("#text-duration"),
+  textSize: document.querySelector("#text-size"),
+  textColor: document.querySelector("#text-color"),
+  closeTextDialog: document.querySelector("#close-text-dialog"),
+  cancelText: document.querySelector("#cancel-text"),
 };
 
 const state = {
@@ -45,10 +59,17 @@ const state = {
   pointerX: 0,
   pointerY: 0,
   clips: [],
+  tracks: [{ id: "v1", name: "V1" }],
+  activeTrackId: "v1",
   selectedClipId: null,
   playhead: 0,
   pixelsPerSecond: 90,
   timelineDrag: null,
+  timelinePreview: false,
+  baseClipId: null,
+  compositionSignature: "",
+  textDialogMode: "add",
+  textDrag: null,
 };
 
 function activeMediaElement() {
@@ -67,6 +88,20 @@ function selectedClip() {
 
 function assetForClip(clip) {
   return state.assets.find((asset) => asset.path === clip?.assetPath) || null;
+}
+
+function trackOrder(trackId) {
+  return state.tracks.findIndex((track) => track.id === trackId);
+}
+
+function clipsAtPlayhead() {
+  return Timeline.findClipsAt(state.clips, state.playhead).sort(
+    (a, b) => trackOrder(a.trackId) - trackOrder(b.trackId),
+  );
+}
+
+function topClipAtPlayhead() {
+  return clipsAtPlayhead().at(-1) || null;
 }
 
 function clamp(value, minimum, maximum) {
@@ -88,10 +123,8 @@ function formatTimelineTime(seconds) {
 }
 
 function applyTransform() {
-  const media = activeMediaElement();
-  if (media) {
-    media.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
-  }
+  elements.compositionSurface.style.transform =
+    `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
   elements.zoomValue.textContent = `${Math.round(state.zoom * 100)}%`;
 }
 
@@ -124,6 +157,8 @@ function setZoom(nextZoom, anchor) {
 function updateAddToTimelineButton() {
   const asset = selectedAsset();
   elements.addToTimeline.disabled = !asset || !Number.isFinite(asset.duration);
+  const track = state.tracks.find((candidate) => candidate.id === state.activeTrackId);
+  elements.addToTimeline.textContent = `＋ Add to ${track?.name || "timeline"}`;
 }
 
 function renderAssets() {
@@ -157,6 +192,10 @@ function renderAssets() {
     button.append(icon, copy);
     button.addEventListener("click", () => {
       state.selectedClipId = null;
+      state.timelinePreview = false;
+      state.baseClipId = null;
+      state.compositionSignature = "";
+      elements.overlayStage.replaceChildren();
       selectAsset(asset);
       renderTimeline();
     });
@@ -183,11 +222,17 @@ function applyPendingVideoSeek() {
 }
 
 function selectAsset(asset, options = {}) {
-  const { keepView = false } = options;
+  const {
+    keepView = false,
+    fromComposition = false,
+    preserveSelection = false,
+  } = options;
   const alreadyLoaded = state.loadedAssetPath === asset.path;
 
-  state.selectedPath = asset.path;
-  elements.selectedName.textContent = asset.name;
+  if (!preserveSelection) {
+    state.selectedPath = asset.path;
+    elements.selectedName.textContent = asset.name;
+  }
   elements.previewEmpty.classList.add("hidden");
 
   if (!alreadyLoaded) {
@@ -214,9 +259,24 @@ function selectAsset(asset, options = {}) {
     }
 
     state.loadedAssetPath = asset.path;
+  } else if (asset.type === "video") {
+    elements.video.classList.add("visible");
+    elements.image.classList.remove("visible");
+    elements.play.disabled = false;
+    elements.seek.disabled = false;
+  } else {
+    elements.image.classList.add("visible");
+    elements.video.classList.remove("visible");
+    elements.play.disabled = true;
+    elements.seek.disabled = true;
   }
 
   if (!keepView) resetView();
+  if (!fromComposition) {
+    state.baseClipId = null;
+    state.compositionSignature = "";
+    elements.overlayStage.replaceChildren();
+  }
   updateAddToTimelineButton();
   renderAssets();
   applyPendingVideoSeek();
@@ -238,6 +298,7 @@ async function addMedia() {
     }
 
     state.selectedClipId = null;
+    state.timelinePreview = false;
     selectAsset(asset);
     renderTimeline();
   } finally {
@@ -252,11 +313,14 @@ function addSelectedAssetToTimeline() {
   const clip = Timeline.createClip({
     id: crypto.randomUUID(),
     asset,
+    trackId: state.activeTrackId,
   });
   state.clips = Timeline.appendClip(state.clips, clip);
   state.selectedClipId = clip.id;
+  state.timelinePreview = true;
   state.playhead = state.clips.find((candidate) => candidate.id === clip.id).start;
   renderTimeline();
+  renderComposition();
   ensurePlayheadVisible();
 }
 
@@ -275,6 +339,7 @@ function updateTimelineControls() {
     state.playhead < Timeline.clipEnd(clip) - Timeline.MIN_CLIP_DURATION;
   elements.splitClip.disabled = !canSplit;
   elements.deleteClip.disabled = !clip;
+  elements.editText.disabled = clip?.type !== "text";
   elements.timelineTimecode.textContent = formatTimelineTime(state.playhead);
 }
 
@@ -311,6 +376,8 @@ function beginClipDrag(event, clipId, mode) {
   event.preventDefault();
   event.stopPropagation();
   state.selectedClipId = clipId;
+  state.activeTrackId = clip.trackId;
+  state.timelinePreview = true;
   state.timelineDrag = {
     mode,
     startX: event.clientX,
@@ -322,14 +389,71 @@ function beginClipDrag(event, clipId, mode) {
   renderTimeline();
 }
 
-function renderClips() {
-  for (const existing of elements.trackLane.querySelectorAll(".timeline-clip")) {
-    existing.remove();
+function addTrack() {
+  const number = state.tracks.length + 1;
+  const track = { id: `v${number}`, name: `V${number}` };
+  state.tracks.push(track);
+  state.activeTrackId = track.id;
+  renderTimeline();
+  updateAddToTimelineButton();
+  return track;
+}
+
+function renderTrackStructure() {
+  elements.trackLabelList.replaceChildren();
+  elements.trackLanes.replaceChildren();
+
+  const visualTracks = [...state.tracks].reverse();
+  for (const track of visualTracks) {
+    const label = document.createElement("div");
+    label.className = "track-label";
+    label.classList.toggle("active", track.id === state.activeTrackId);
+    label.dataset.trackId = track.id;
+    const name = document.createElement("strong");
+    name.textContent = track.name;
+    const type = document.createElement("span");
+    type.textContent = track.id === "v1" ? "Base" : "Overlay";
+    label.append(name, type);
+    label.addEventListener("click", () => {
+      state.activeTrackId = track.id;
+      renderTimeline();
+      updateAddToTimelineButton();
+    });
+    elements.trackLabelList.append(label);
+
+    const lane = document.createElement("div");
+    lane.className = "track-lane";
+    lane.classList.toggle("active", track.id === state.activeTrackId);
+    lane.dataset.trackId = track.id;
+    lane.style.backgroundSize = `${state.pixelsPerSecond}px 100%`;
+    lane.addEventListener("pointerdown", (event) => {
+      if (event.target !== lane || event.button !== 0) return;
+      state.activeTrackId = track.id;
+      state.timelinePreview = true;
+      state.timelineDrag = { mode: "playhead" };
+      setPlayhead(timelineTimeFromPointer(event));
+      renderTimeline();
+    });
+
+    if (!state.clips.some((clip) => clip.trackId === track.id)) {
+      const empty = document.createElement("div");
+      empty.className = "timeline-empty";
+      empty.textContent =
+        track.id === state.activeTrackId
+          ? `Add media or text to ${track.name}`
+          : `${track.name} is empty`;
+      lane.append(empty);
+    }
+    elements.trackLanes.append(lane);
   }
+}
 
-  elements.timelineEmpty.classList.toggle("hidden", state.clips.length > 0);
-
+function renderClips() {
   for (const clip of state.clips) {
+    const lane = elements.trackLanes.querySelector(`[data-track-id="${clip.trackId}"]`);
+    if (!lane) continue;
+    lane.querySelector(".timeline-empty")?.remove();
+
     const element = document.createElement("div");
     element.className = `timeline-clip ${clip.type}`;
     element.classList.toggle("selected", clip.id === state.selectedClipId);
@@ -365,7 +489,14 @@ function renderClips() {
       if (event.target.classList.contains("clip-handle")) return;
       beginClipDrag(event, clip.id, "move");
     });
-    elements.trackLane.append(element);
+    if (clip.type === "text") {
+      element.addEventListener("dblclick", (event) => {
+        event.stopPropagation();
+        state.selectedClipId = clip.id;
+        openTextDialog("edit");
+      });
+    }
+    lane.append(element);
   }
 }
 
@@ -373,9 +504,12 @@ function renderTimeline() {
   const visibleWidth = elements.timelineScroll.clientWidth || 800;
   const end = Math.max(15, Timeline.timelineEnd(state.clips) + 5);
   const width = Math.max(visibleWidth, Math.ceil(end * state.pixelsPerSecond));
+  const timelineHeight = 28 + state.tracks.length * 80;
   elements.timelineContent.style.width = `${width}px`;
-  elements.trackLane.style.backgroundSize = `${state.pixelsPerSecond}px 100%`;
+  elements.timelineContent.style.height = `${timelineHeight}px`;
+  elements.trackLanes.style.height = `${state.tracks.length * 80}px`;
   renderRuler(width / state.pixelsPerSecond);
+  renderTrackStructure();
   renderClips();
   updatePlayheadVisual();
 }
@@ -392,26 +526,31 @@ function ensurePlayheadVisible() {
 
 function selectClipAtTime(clip, timelineTime) {
   state.selectedClipId = clip.id;
+  state.activeTrackId = clip.trackId;
+  state.timelinePreview = true;
   state.playhead = clamp(timelineTime, clip.start, Timeline.clipEnd(clip));
   const asset = assetForClip(clip);
-  if (!asset) return;
-
-  if (asset.type === "video") {
+  if (asset?.type === "video") {
     state.pendingVideoSeek = clip.sourceIn + (state.playhead - clip.start);
   }
-  selectAsset(asset, { keepView: true });
-  applyPendingVideoSeek();
+  renderComposition();
 }
 
 function setPlayhead(time, syncPreview = true) {
   const maximum = Math.max(Timeline.timelineEnd(state.clips), 0);
   state.playhead = clamp(time, 0, maximum);
-  const clip = Timeline.findClipAt(state.clips, state.playhead);
+  const selected = selectedClip();
+  const selectedIsActive =
+    selected &&
+    state.playhead >= selected.start &&
+    state.playhead < Timeline.clipEnd(selected);
+  const clip = selectedIsActive ? selected : topClipAtPlayhead();
 
   if (syncPreview && clip) selectClipAtTime(clip, state.playhead);
   else if (!clip) {
     state.selectedClipId = null;
     elements.video.pause();
+    renderComposition();
   }
 
   updatePlayheadVisual();
@@ -440,6 +579,7 @@ function splitAtPlayhead() {
   state.clips = result.clips;
   state.selectedClipId = result.rightId;
   renderTimeline();
+  renderComposition();
 }
 
 function deleteSelectedClip() {
@@ -449,6 +589,7 @@ function deleteSelectedClip() {
   state.playhead = Math.min(state.playhead, Timeline.timelineEnd(state.clips));
   elements.video.pause();
   renderTimeline();
+  renderComposition();
 }
 
 function handleTimelinePointerMove(event) {
@@ -462,10 +603,14 @@ function handleTimelinePointerMove(event) {
 
   const delta = (event.clientX - drag.startX) / state.pixelsPerSecond;
   if (drag.mode === "move") {
+    const lane = document.elementFromPoint(event.clientX, event.clientY)?.closest(".track-lane");
+    const targetTrackId = lane?.dataset.trackId || drag.baseClip.trackId;
+    state.activeTrackId = targetTrackId;
     state.clips = Timeline.moveClip(
       drag.baseClips,
       drag.clipId,
       drag.baseClip.start + delta,
+      targetTrackId,
     );
   } else if (drag.mode === "trim-left") {
     state.clips = Timeline.trimClipLeft(
@@ -482,20 +627,236 @@ function handleTimelinePointerMove(event) {
   }
 
   renderTimeline();
+  renderComposition();
 }
 
 function endTimelineDrag() {
   if (!state.timelineDrag) return;
   state.timelineDrag = null;
   renderTimeline();
+  renderComposition();
+}
+
+function compositionKey(activeClips, baseClip) {
+  return `${baseClip?.id || "none"}|${activeClips.map((clip) => clip.id).join(",")}`;
+}
+
+function overlayVideos() {
+  return [...elements.overlayStage.querySelectorAll("video.composition-overlay")];
+}
+
+function pauseOverlayVideos() {
+  for (const video of overlayVideos()) video.pause();
+}
+
+async function playOverlayVideos() {
+  for (const video of overlayVideos()) {
+    try {
+      await video.play();
+    } catch {
+      // A layer may still be loading; loadedmetadata will start it when ready.
+    }
+  }
+}
+
+function beginTextPositionDrag(event, clipId) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  state.selectedClipId = clipId;
+  state.textDrag = { clipId };
+  renderTimeline();
+  renderComposition();
+}
+
+function updateTextPosition(event) {
+  if (!state.textDrag) return;
+  const rect = elements.compositionSurface.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+  const x = ((event.clientX - rect.left) / rect.width) * 100;
+  const y = ((event.clientY - rect.top) / rect.height) * 100;
+  state.clips = Timeline.updateTextClip(state.clips, state.textDrag.clipId, { x, y });
+  renderComposition();
+}
+
+function renderComposition() {
+  if (!state.timelinePreview) return;
+
+  const activeClips = clipsAtPlayhead();
+  const mediaClips = activeClips.filter((clip) => clip.type !== "text");
+  const baseClip = mediaClips[0] || null;
+  state.baseClipId = baseClip?.id || null;
+  state.compositionSignature = compositionKey(activeClips, baseClip);
+  elements.overlayStage.replaceChildren();
+
+  if (baseClip) {
+    const asset = assetForClip(baseClip);
+    if (asset) {
+      if (asset.type === "video") {
+        state.pendingVideoSeek = baseClip.sourceIn + (state.playhead - baseClip.start);
+      }
+      selectAsset(asset, {
+        keepView: true,
+        fromComposition: true,
+        preserveSelection: true,
+      });
+      elements.selectedName.textContent = "Timeline composition";
+      applyPendingVideoSeek();
+    }
+  } else {
+    elements.video.pause();
+    elements.video.classList.remove("visible");
+    elements.image.classList.remove("visible");
+    elements.play.disabled = true;
+    elements.seek.disabled = true;
+    elements.currentTime.textContent = "00:00";
+    elements.duration.textContent = activeClips.some((clip) => clip.type === "text")
+      ? "TEXT"
+      : "00:00";
+    elements.selectedName.textContent = "Timeline composition";
+  }
+
+  for (const clip of activeClips) {
+    const zIndex = trackOrder(clip.trackId) + 2;
+
+    if (clip.type === "text") {
+      const text = document.createElement("div");
+      text.className = "text-overlay";
+      text.classList.toggle("selected", clip.id === state.selectedClipId);
+      text.textContent = clip.text;
+      text.style.left = `${clip.x}%`;
+      text.style.top = `${clip.y}%`;
+      text.style.color = clip.color;
+      const previewHeight = elements.compositionSurface.clientHeight || 540;
+      text.style.fontSize = `${Math.max(10, (clip.fontSize * previewHeight) / 1080)}px`;
+      text.style.zIndex = String(zIndex);
+      text.addEventListener("pointerdown", (event) =>
+        beginTextPositionDrag(event, clip.id),
+      );
+      text.addEventListener("dblclick", (event) => {
+        event.stopPropagation();
+        state.selectedClipId = clip.id;
+        openTextDialog("edit");
+      });
+      elements.overlayStage.append(text);
+      continue;
+    }
+
+    if (clip.id === baseClip?.id) continue;
+    const asset = assetForClip(clip);
+    if (!asset) continue;
+    const layer = document.createElement(asset.type === "video" ? "video" : "img");
+    layer.className = "composition-overlay";
+    layer.dataset.clipId = clip.id;
+    layer.style.zIndex = String(zIndex);
+    layer.src = asset.url;
+
+    if (asset.type === "video") {
+      layer.muted = true;
+      layer.preload = "auto";
+      const sourceTime = clip.sourceIn + (state.playhead - clip.start);
+      layer.addEventListener("loadedmetadata", async () => {
+        layer.currentTime = clamp(sourceTime, 0, layer.duration || sourceTime);
+        if (!elements.video.paused) {
+          try {
+            await layer.play();
+          } catch {
+            // The base video remains authoritative if an overlay cannot autoplay.
+          }
+        }
+      });
+    }
+
+    elements.overlayStage.append(layer);
+  }
+
+  if (baseClip?.type === "video") updatePlayback();
+  updateTimelineControls();
+}
+
+function syncCompositionDuringPlayback() {
+  if (!state.timelinePreview) return;
+  const activeClips = clipsAtPlayhead();
+  const mediaClips = activeClips.filter((clip) => clip.type !== "text");
+  const baseClip = mediaClips[0] || null;
+  const nextSignature = compositionKey(activeClips, baseClip);
+  if (nextSignature !== state.compositionSignature) {
+    renderComposition();
+    return;
+  }
+
+  for (const video of overlayVideos()) {
+    const clip = state.clips.find((candidate) => candidate.id === video.dataset.clipId);
+    if (!clip || video.readyState < 1) continue;
+    const desired = clip.sourceIn + (state.playhead - clip.start);
+    if (Math.abs(video.currentTime - desired) > 0.15) video.currentTime = desired;
+  }
+}
+
+function openTextDialog(mode) {
+  state.textDialogMode = mode;
+  const clip = mode === "edit" ? selectedClip() : null;
+  if (mode === "edit" && clip?.type !== "text") return;
+
+  elements.textDialogTitle.textContent = mode === "edit" ? "Edit text" : "Add text";
+  elements.textValue.value = clip?.text || "";
+  elements.textDuration.value = String(clip ? Timeline.clipDuration(clip) : 5);
+  elements.textSize.value = String(clip?.fontSize || 48);
+  elements.textColor.value = clip?.color || "#ffffff";
+  elements.textDialog.showModal();
+  elements.textValue.focus();
+}
+
+function applyTextDialog() {
+  const text = elements.textValue.value.trim();
+  if (!text) return;
+  const duration = Number(elements.textDuration.value);
+  const fontSize = Number(elements.textSize.value);
+  const color = elements.textColor.value;
+
+  if (state.textDialogMode === "edit") {
+    state.clips = Timeline.updateTextClip(state.clips, state.selectedClipId, {
+      text,
+      duration,
+      fontSize,
+      color,
+    });
+  } else {
+    if (state.tracks.length === 1) addTrack();
+    const clip = Timeline.createTextClip({
+      id: crypto.randomUUID(),
+      text,
+      trackId: state.activeTrackId,
+      start: state.playhead,
+      duration,
+      fontSize,
+      color,
+    });
+    state.clips = [...state.clips, clip];
+    state.selectedClipId = clip.id;
+    state.timelinePreview = true;
+  }
+
+  elements.textDialog.close();
+  renderTimeline();
+  renderComposition();
 }
 
 elements.addMedia.addEventListener("click", addMedia);
 elements.addToTimeline.addEventListener("click", addSelectedAssetToTimeline);
+elements.addTrack.addEventListener("click", addTrack);
+elements.addText.addEventListener("click", () => openTextDialog("add"));
+elements.editText.addEventListener("click", () => openTextDialog("edit"));
+elements.closeTextDialog.addEventListener("click", () => elements.textDialog.close());
+elements.cancelText.addEventListener("click", () => elements.textDialog.close());
+elements.textForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  applyTextDialog();
+});
 window.anonEditor.onPickRequested(addMedia);
 
 elements.video.addEventListener("loadedmetadata", () => {
-  const asset = selectedAsset();
+  const asset = state.assets.find((candidate) => candidate.path === state.loadedAssetPath);
   if (asset?.type === "video") asset.duration = elements.video.duration;
   elements.seek.max = String(elements.video.duration || 0);
   applyPendingVideoSeek();
@@ -506,7 +867,9 @@ elements.video.addEventListener("loadedmetadata", () => {
 
 elements.video.addEventListener("timeupdate", () => {
   updatePlayback();
-  const clip = selectedClip();
+  const clip = state.timelinePreview
+    ? state.clips.find((candidate) => candidate.id === state.baseClipId)
+    : selectedClip();
   if (!clip || clip.assetPath !== state.loadedAssetPath) return;
 
   if (elements.video.currentTime >= clip.sourceOut - 0.02) {
@@ -517,14 +880,23 @@ elements.video.addEventListener("timeupdate", () => {
   }
   updatePlayheadVisual();
   ensurePlayheadVisible();
+  syncCompositionDuringPlayback();
 });
 
-elements.video.addEventListener("play", updatePlayback);
-elements.video.addEventListener("pause", updatePlayback);
+elements.video.addEventListener("play", () => {
+  updatePlayback();
+  playOverlayVideos();
+});
+elements.video.addEventListener("pause", () => {
+  updatePlayback();
+  pauseOverlayVideos();
+});
 elements.video.addEventListener("ended", updatePlayback);
 
 elements.play.addEventListener("click", async () => {
-  const clip = selectedClip();
+  const clip = state.timelinePreview
+    ? state.clips.find((candidate) => candidate.id === state.baseClipId)
+    : selectedClip();
   if (clip && elements.video.currentTime >= clip.sourceOut - 0.02) {
     elements.video.currentTime = clip.sourceIn;
     state.playhead = clip.start;
@@ -535,13 +907,16 @@ elements.play.addEventListener("click", async () => {
 });
 
 elements.seek.addEventListener("input", () => {
-  const clip = selectedClip();
+  const clip = state.timelinePreview
+    ? state.clips.find((candidate) => candidate.id === state.baseClipId)
+    : selectedClip();
   let time = Number(elements.seek.value);
   if (clip) time = clamp(time, clip.sourceIn, clip.sourceOut);
   elements.video.currentTime = time;
   if (clip) state.playhead = clip.start + (time - clip.sourceIn);
   updatePlayback();
   updatePlayheadVisual();
+  renderComposition();
 });
 
 elements.zoomIn.addEventListener("click", () => setZoom(state.zoom * 1.2));
@@ -593,12 +968,7 @@ elements.viewport.addEventListener("pointercancel", endPreviewDrag);
 
 elements.timelineRuler.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
-  state.timelineDrag = { mode: "playhead" };
-  setPlayhead(timelineTimeFromPointer(event));
-});
-
-elements.trackLane.addEventListener("pointerdown", (event) => {
-  if (event.target !== elements.trackLane || event.button !== 0) return;
+  state.timelinePreview = true;
   state.timelineDrag = { mode: "playhead" };
   setPlayhead(timelineTimeFromPointer(event));
 });
@@ -607,12 +977,22 @@ elements.playhead.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
   event.preventDefault();
   event.stopPropagation();
+  state.timelinePreview = true;
   state.timelineDrag = { mode: "playhead" };
 });
 
-document.addEventListener("pointermove", handleTimelinePointerMove);
-document.addEventListener("pointerup", endTimelineDrag);
-document.addEventListener("pointercancel", endTimelineDrag);
+document.addEventListener("pointermove", (event) => {
+  handleTimelinePointerMove(event);
+  updateTextPosition(event);
+});
+document.addEventListener("pointerup", () => {
+  endTimelineDrag();
+  state.textDrag = null;
+});
+document.addEventListener("pointercancel", () => {
+  endTimelineDrag();
+  state.textDrag = null;
+});
 
 elements.splitClip.addEventListener("click", splitAtPlayhead);
 elements.deleteClip.addEventListener("click", deleteSelectedClip);
@@ -626,6 +1006,11 @@ elements.timelineZoom.addEventListener("input", () => {
   renderTimeline();
   elements.timelineScroll.scrollLeft =
     centerTime * state.pixelsPerSecond - elements.timelineScroll.clientWidth / 2;
+});
+
+elements.timelineScroll.addEventListener("scroll", () => {
+  elements.trackLabelList.style.transform =
+    `translateY(${-elements.timelineScroll.scrollTop}px)`;
 });
 
 document.addEventListener("keydown", (event) => {

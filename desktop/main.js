@@ -67,10 +67,15 @@ function createWindow() {
             hasDesktopApi: typeof window.anonEditor?.pickMedia === "function",
             hasTimelineModel: typeof window.TimelineModel?.splitClip === "function",
             hasTimelineUi: Boolean(
-              document.querySelector("#track-lane") &&
+              document.querySelector("#track-lanes") &&
               document.querySelector("#playhead") &&
               document.querySelector("#timeline-zoom")
-            )
+            ),
+            hasPhase4Ui: Boolean(
+              document.querySelector("#add-track") &&
+              document.querySelector("#text-dialog") &&
+              document.querySelector("#overlay-stage")
+            ),
           })
         `);
         const ready = Object.values(result).every(Boolean);

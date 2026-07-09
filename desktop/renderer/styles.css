@@ -365,6 +365,16 @@ button {
   cursor: grabbing;
 }
 
+.composition-surface {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: calc(100% - 48px);
+  height: calc(100% - 38px);
+  transform-origin: center;
+  will-change: transform;
+}
+
 .preview-empty {
   display: grid;
   place-items: center;
@@ -401,16 +411,51 @@ button {
 
 .preview-media {
   display: none;
-  max-width: calc(100% - 48px);
-  max-height: calc(100% - 38px);
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
-  transform-origin: center;
   user-select: none;
-  will-change: transform;
 }
 
 .preview-media.visible {
   display: block;
+}
+
+.overlay-stage {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.composition-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.text-overlay {
+  position: absolute;
+  max-width: 90%;
+  padding: 4px 7px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  text-align: center;
+  text-shadow:
+    0 2px 5px rgba(0, 0, 0, 0.85),
+    0 0 2px rgba(0, 0, 0, 0.9);
+  transform: translate(-50%, -50%);
+  cursor: move;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.text-overlay.selected {
+  border: 1px dashed rgba(255, 255, 255, 0.75);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.15);
 }
 
 .playback-bar {
@@ -472,6 +517,22 @@ button {
   color: #777b85;
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 9px;
+}
+
+.timeline-title button {
+  height: 23px;
+  padding: 0 7px;
+  border: 1px solid #34363e;
+  border-radius: 5px;
+  background: #202127;
+  color: #aeb1ba;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.timeline-title button:hover {
+  border-color: #5d52b6;
+  background: #29263d;
 }
 
 .timeline-edit-actions {
@@ -536,7 +597,9 @@ kbd {
   position: relative;
   z-index: 5;
   display: grid;
-  grid-template-rows: 28px 80px;
+  grid-template-rows: 28px minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
   border-right: 1px solid #2b2d34;
   background: #15161a;
 }
@@ -545,12 +608,29 @@ kbd {
   border-bottom: 1px solid #292b32;
 }
 
+.track-label-list {
+  min-height: 0;
+  will-change: transform;
+}
+
 .track-label {
   display: grid;
   place-items: center;
   align-content: center;
   gap: 3px;
+  height: 80px;
   border-bottom: 1px solid #292b32;
+  background: #15161a;
+  cursor: pointer;
+}
+
+.track-label:hover {
+  background: #1b1c21;
+}
+
+.track-label.active {
+  box-shadow: inset 3px 0 #7969ee;
+  background: #211f31;
 }
 
 .track-label strong {
@@ -566,8 +646,7 @@ kbd {
 .timeline-scroll {
   min-width: 0;
   min-height: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: auto;
   scrollbar-color: #393b44 #15161a;
   scrollbar-width: thin;
 }
@@ -575,7 +654,7 @@ kbd {
 .timeline-content {
   position: relative;
   min-width: 100%;
-  height: 108px;
+  min-height: 108px;
 }
 
 .timeline-ruler {
@@ -606,6 +685,10 @@ kbd {
   font-family: "Cascadia Mono", Consolas, monospace;
   font-size: 8px;
   white-space: nowrap;
+}
+
+.track-lanes {
+  position: relative;
 }
 
 .track-lane {
@@ -750,6 +833,122 @@ kbd {
 .playhead span {
   position: absolute;
   inset: 0 -5px;
+}
+
+.text-dialog {
+  width: min(520px, calc(100vw - 40px));
+  padding: 0;
+  border: 1px solid #3b3d47;
+  border-radius: 12px;
+  background: #191a1f;
+  color: #eceef2;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+}
+
+.text-dialog::backdrop {
+  background: rgba(6, 7, 9, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.text-dialog form {
+  display: grid;
+  gap: 17px;
+  padding: 20px;
+}
+
+.dialog-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+}
+
+.dialog-heading h2 {
+  margin: 3px 0 0;
+  font-size: 18px;
+}
+
+.icon-button {
+  width: 29px;
+  height: 29px;
+  border: 1px solid #34363e;
+  border-radius: 6px;
+  background: #222329;
+  cursor: pointer;
+}
+
+.text-dialog label {
+  display: grid;
+  gap: 7px;
+  color: #aeb1ba;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.text-dialog textarea,
+.text-dialog input[type="number"] {
+  width: 100%;
+  border: 1px solid #383a43;
+  border-radius: 7px;
+  outline: none;
+  background: #111216;
+  color: #f1f2f4;
+}
+
+.text-dialog textarea:focus,
+.text-dialog input:focus {
+  border-color: #7465e4;
+}
+
+.text-dialog textarea {
+  min-height: 92px;
+  padding: 10px;
+  resize: vertical;
+}
+
+.text-dialog input[type="number"] {
+  height: 34px;
+  padding: 0 9px;
+}
+
+.text-dialog input[type="color"] {
+  width: 100%;
+  height: 34px;
+  padding: 2px;
+  border: 1px solid #383a43;
+  border-radius: 7px;
+  background: #111216;
+}
+
+.text-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 90px;
+  gap: 10px;
+}
+
+.text-dialog p {
+  margin: -5px 0 0;
+  color: #747781;
+  font-size: 10px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: end;
+  gap: 8px;
+}
+
+.dialog-actions button {
+  min-height: 34px;
+  padding: 0 13px;
+  border: 1px solid #3b3d46;
+  border-radius: 7px;
+  background: #24252b;
+  cursor: pointer;
+}
+
+.dialog-actions .primary-button {
+  border-color: #7869f4;
+  background: #6555dd;
 }
 
 @media (max-width: 1100px) {

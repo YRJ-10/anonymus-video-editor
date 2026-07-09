@@ -9,11 +9,13 @@ Development currently covers:
 - **Phase 2:** the offline desktop shell and local video/photo preview.
 - **Phase 3:** the editable V1 timeline with playhead, move, trim, slice,
   delete, and timeline zoom.
+- **Phase 4:** multi-track video/photo overlays and positioned text annotations.
 
 See [the Phase 1 contract](docs/phase-1-contract.md) for its strict output
 allowlist and [the Phase 2 foundation](docs/phase-2-foundation.md) for the
 desktop security boundary and preview features. Timeline behavior is documented
-in [the Phase 3 timeline](docs/phase-3-timeline.md).
+in [the Phase 3 timeline](docs/phase-3-timeline.md), with compositing described
+in [the Phase 4 overlays](docs/phase-4-overlays.md).
 
 ## Requirements
 
