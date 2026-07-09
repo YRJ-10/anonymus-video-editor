@@ -7,10 +7,13 @@ Development currently covers:
 
 - **Phase 1:** the origin-free export engine.
 - **Phase 2:** the offline desktop shell and local video/photo preview.
+- **Phase 3:** the editable V1 timeline with playhead, move, trim, slice,
+  delete, and timeline zoom.
 
 See [the Phase 1 contract](docs/phase-1-contract.md) for its strict output
 allowlist and [the Phase 2 foundation](docs/phase-2-foundation.md) for the
-desktop security boundary and preview features.
+desktop security boundary and preview features. Timeline behavior is documented
+in [the Phase 3 timeline](docs/phase-3-timeline.md).
 
 ## Requirements
 

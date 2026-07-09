@@ -56,11 +56,16 @@
               <strong id="selected-name">Nothing selected</strong>
             </div>
 
-            <div class="zoom-controls" aria-label="Preview zoom">
-              <button id="zoom-out" type="button" title="Zoom out">−</button>
-              <button id="zoom-fit" type="button" title="Reset preview">Fit</button>
-              <span id="zoom-value">100%</span>
-              <button id="zoom-in" type="button" title="Zoom in">＋</button>
+            <div class="preview-actions">
+              <button id="add-to-timeline" class="secondary-button" type="button" disabled>
+                ＋ Add to timeline
+              </button>
+              <div class="zoom-controls" aria-label="Preview zoom">
+                <button id="zoom-out" type="button" title="Zoom out">−</button>
+                <button id="zoom-fit" type="button" title="Reset preview">Fit</button>
+                <span id="zoom-value">100%</span>
+                <button id="zoom-in" type="button" title="Zoom in">＋</button>
+              </div>
             </div>
           </div>
 
@@ -91,19 +96,68 @@
             <span id="duration" class="timecode">00:00</span>
           </div>
 
-          <section class="timeline-placeholder" aria-label="Timeline placeholder">
-            <div class="timeline-ruler">
-              <span>00:00</span><span>00:05</span><span>00:10</span><span>00:15</span>
+          <section class="timeline-panel" aria-label="Video timeline">
+            <div class="timeline-toolbar">
+              <div class="timeline-title">
+                <strong>Timeline</strong>
+                <span id="timeline-timecode">00:00.00</span>
+              </div>
+
+              <div class="timeline-edit-actions">
+                <button id="split-clip" type="button" disabled title="Slice at playhead (S)">
+                  Slice
+                  <kbd>S</kbd>
+                </button>
+                <button id="delete-clip" type="button" disabled title="Delete selected clip">
+                  Delete
+                  <kbd>Del</kbd>
+                </button>
+              </div>
+
+              <div class="timeline-zoom">
+                <span>−</span>
+                <input
+                  id="timeline-zoom"
+                  type="range"
+                  min="40"
+                  max="240"
+                  step="10"
+                  value="90"
+                  aria-label="Timeline zoom"
+                />
+                <span>＋</span>
+              </div>
             </div>
-            <div class="track-placeholder">
-              <span>V1</span>
-              <div>Timeline arrives in Phase 3</div>
+
+            <div class="timeline-body">
+              <div class="track-labels" aria-hidden="true">
+                <div class="ruler-label"></div>
+                <div class="track-label">
+                  <strong>V1</strong>
+                  <span>Video</span>
+                </div>
+              </div>
+
+              <div id="timeline-scroll" class="timeline-scroll">
+                <div id="timeline-content" class="timeline-content">
+                  <div id="timeline-ruler" class="timeline-ruler"></div>
+                  <div id="track-lane" class="track-lane">
+                    <div id="timeline-empty" class="timeline-empty">
+                      Add selected media to the timeline
+                    </div>
+                  </div>
+                  <div id="playhead" class="playhead" title="Drag playhead">
+                    <span></span>
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
         </section>
       </main>
     </div>
 
+    <script src="./timeline-model.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

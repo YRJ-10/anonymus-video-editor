@@ -59,10 +59,29 @@ function createWindow() {
     if (url !== mainWindow.webContents.getURL()) event.preventDefault();
   });
   if (!smokeTest) mainWindow.once("ready-to-show", () => mainWindow.show());
-  mainWindow.webContents.once("did-finish-load", () => {
+  mainWindow.webContents.once("did-finish-load", async () => {
     if (smokeTest) {
-      console.log("ANON_EDITOR_DESKTOP_READY");
-      app.quit();
+      try {
+        const result = await mainWindow.webContents.executeJavaScript(`
+          ({
+            hasDesktopApi: typeof window.anonEditor?.pickMedia === "function",
+            hasTimelineModel: typeof window.TimelineModel?.splitClip === "function",
+            hasTimelineUi: Boolean(
+              document.querySelector("#track-lane") &&
+              document.querySelector("#playhead") &&
+              document.querySelector("#timeline-zoom")
+            )
+          })
+        `);
+        const ready = Object.values(result).every(Boolean);
+        console.log(
+          ready ? "ANON_EDITOR_DESKTOP_READY" : `ANON_EDITOR_DESKTOP_INVALID ${JSON.stringify(result)}`,
+        );
+        app.exit(ready ? 0 : 1);
+      } catch (error) {
+        console.error(`ANON_EDITOR_DESKTOP_ERROR ${error.message}`);
+        app.exit(1);
+      }
     }
   });
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
