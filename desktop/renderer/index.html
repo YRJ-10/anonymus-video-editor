@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' file: blob: data:; media-src 'self' file: blob:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Anon Editor</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">A</span>
+          <div>
+            <strong>Anon Editor</strong>
+            <span>Offline workspace</span>
+          </div>
+        </div>
+
+        <button id="add-media" class="primary-button" type="button">
+          <span aria-hidden="true">＋</span>
+          Add video or photo
+        </button>
+
+        <div class="privacy-status" title="Remote network requests are blocked">
+          <span class="status-dot" aria-hidden="true"></span>
+          Offline
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="media-panel" aria-label="Project media">
+          <div class="panel-heading">
+            <div>
+              <span class="eyebrow">PROJECT</span>
+              <h1>Media</h1>
+            </div>
+            <span id="asset-count" class="count-badge">0</span>
+          </div>
+          <div id="asset-list" class="asset-list"></div>
+          <div id="empty-assets" class="empty-assets">
+            <div class="empty-icon" aria-hidden="true">▣</div>
+            <p>No media yet</p>
+            <span>Add one video or photo to begin.</span>
+          </div>
+        </aside>
+
+        <section class="editor-area">
+          <div class="preview-toolbar">
+            <div class="selected-file">
+              <span class="eyebrow">PREVIEW</span>
+              <strong id="selected-name">Nothing selected</strong>
+            </div>
+
+            <div class="zoom-controls" aria-label="Preview zoom">
+              <button id="zoom-out" type="button" title="Zoom out">−</button>
+              <button id="zoom-fit" type="button" title="Reset preview">Fit</button>
+              <span id="zoom-value">100%</span>
+              <button id="zoom-in" type="button" title="Zoom in">＋</button>
+            </div>
+          </div>
+
+          <div id="preview-viewport" class="preview-viewport">
+            <div id="preview-empty" class="preview-empty">
+              <div class="preview-empty-mark" aria-hidden="true">A</div>
+              <strong>Your preview will appear here</strong>
+              <span>Open a local video or photo. Nothing is uploaded.</span>
+            </div>
+
+            <video id="video-preview" class="preview-media" preload="metadata"></video>
+            <img id="image-preview" class="preview-media" alt="Selected media preview" />
+          </div>
+
+          <div class="playback-bar">
+            <button id="play-toggle" class="play-button" type="button" disabled>▶</button>
+            <span id="current-time" class="timecode">00:00</span>
+            <input
+              id="seek"
+              type="range"
+              min="0"
+              max="0"
+              step="0.01"
+              value="0"
+              disabled
+              aria-label="Video position"
+            />
+            <span id="duration" class="timecode">00:00</span>
+          </div>
+
+          <section class="timeline-placeholder" aria-label="Timeline placeholder">
+            <div class="timeline-ruler">
+              <span>00:00</span><span>00:05</span><span>00:10</span><span>00:15</span>
+            </div>
+            <div class="track-placeholder">
+              <span>V1</span>
+              <div>Timeline arrives in Phase 3</div>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

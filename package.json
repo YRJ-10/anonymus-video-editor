@@ -3,9 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "description": "Origin-free video export engine for Anon Editor",
+  "main": "desktop/main.js",
   "scripts": {
     "anon": "node src/cli.js",
-    "test": "node --test test/*.test.js"
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "test:phase1": "node --test test/phase1.test.js",
+    "test:phase2": "node --test test/desktop.test.js",
+    "test:desktop:smoke": "electron . --smoke-test"
+  },
+  "devDependencies": {
+    "electron": "^43.1.0"
   },
   "engines": {
     "node": ">=20"
