@@ -1,0 +1,375 @@
+"use strict";
+
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
+const { spawn } = require("node:child_process");
+const { probeFile } = require("./probe");
+const { verifyFile } = require("./verify");
+const { removeMoovMetadataBoxes } = require("./mp4");
+
+function clipDuration(clip) {
+  return Math.max(0, Number(clip.sourceOut) - Number(clip.sourceIn));
+}
+
+function clipEnd(clip) {
+  return Number(clip.start) + clipDuration(clip);
+}
+
+function projectDuration(project) {
+  return project.clips.reduce((maximum, clip) => Math.max(maximum, clipEnd(clip)), 0);
+}
+
+function filterNumber(value) {
+  return Number(value).toFixed(4).replace(/\.?0+$/, "");
+}
+
+function escapeFilterPath(filePath) {
+  return filePath
+    .replaceAll("\\", "/")
+    .replace(/:/g, "\\:")
+    .replace(/'/g, "\\'")
+    .replace(/,/g, "\\,")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]");
+}
+
+function findSystemFont() {
+  const candidates = [
+    process.env.WINDIR && path.join(process.env.WINDIR, "Fonts", "arial.ttf"),
+    "C:\\Windows\\Fonts\\arial.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+  ].filter(Boolean);
+  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
+}
+
+function makeTemporaryPaths(outputPath) {
+  const directory = path.dirname(outputPath);
+  const base = path.basename(outputPath, path.extname(outputPath));
+  const token = crypto.randomBytes(6).toString("hex");
+  return {
+    output: path.join(directory, `.${base}.render-${process.pid}-${token}.mp4`),
+    supportDirectory: path.join(directory, `.anon-export-${process.pid}-${token}`),
+  };
+}
+
+async function hasAudioStream(filePath, cache) {
+  if (!cache.has(filePath)) {
+    const probe = await probeFile(filePath);
+    cache.set(
+      filePath,
+      (probe.streams || []).some((stream) => stream.codec_type === "audio"),
+    );
+  }
+  return cache.get(filePath);
+}
+
+async function buildExportPlan(project, temporaryPaths) {
+  const duration = projectDuration(project);
+  if (duration <= 0) throw new Error("The timeline is empty");
+
+  const assetByPath = new Map(project.assets.map((asset) => [asset.path, asset]));
+  const trackOrder = new Map(project.tracks.map((track, index) => [track.id, index]));
+  const visualClips = project.clips
+    .filter((clip) => ["video", "image"].includes(clip.type))
+    .sort((left, right) => {
+      const trackDifference =
+        (trackOrder.get(left.trackId) || 0) - (trackOrder.get(right.trackId) || 0);
+      return trackDifference || left.start - right.start;
+    });
+  const textClips = project.clips
+    .filter((clip) => clip.type === "text")
+    .sort((left, right) => {
+      const trackDifference =
+        (trackOrder.get(left.trackId) || 0) - (trackOrder.get(right.trackId) || 0);
+      return trackDifference || left.start - right.start;
+    });
+  const fontFile = textClips.length > 0 ? findSystemFont() : null;
+  if (textClips.length > 0 && !fontFile) {
+    throw new Error("No supported system font was found for text rendering");
+  }
+
+  fs.mkdirSync(temporaryPaths.supportDirectory, { recursive: true });
+  const inputArgs = [];
+  const filters = [
+    `color=c=black:s=1920x1080:r=30:d=${filterNumber(duration)}[canvas0]`,
+  ];
+  const audioLabels = [];
+  const audioCache = new Map();
+  let currentVideo = "canvas0";
+
+  for (let index = 0; index < visualClips.length; index += 1) {
+    const clip = visualClips[index];
+    const asset = assetByPath.get(clip.assetPath);
+    if (!asset) throw new Error(`Missing asset for clip: ${clip.assetName}`);
+    if (!fs.existsSync(asset.path)) throw new Error(`Media file is missing: ${asset.path}`);
+
+    const inputIndex = index;
+    const clipLength = clipDuration(clip);
+    if (asset.type === "image") {
+      inputArgs.push(
+        "-loop",
+        "1",
+        "-framerate",
+        "30",
+        "-t",
+        filterNumber(clipLength),
+        "-i",
+        asset.path,
+      );
+    } else {
+      inputArgs.push(
+        "-ss",
+        filterNumber(clip.sourceIn),
+        "-t",
+        filterNumber(clipLength),
+        "-i",
+        asset.path,
+      );
+    }
+
+    const layer = `layer${index}`;
+    const nextVideo = `composite${index + 1}`;
+    filters.push(
+      `[${inputIndex}:v:0]trim=duration=${filterNumber(clipLength)},` +
+        `setpts=PTS-STARTPTS+${filterNumber(clip.start)}/TB,fps=30,` +
+        "scale=w=1920:h=1080:force_original_aspect_ratio=decrease:" +
+        `force_divisible_by=2,setsar=1,format=rgba[${layer}]`,
+    );
+    filters.push(
+      `[${currentVideo}][${layer}]overlay=x=(W-w)/2:y=(H-h)/2:` +
+        `eof_action=pass:shortest=0:enable='between(t,${filterNumber(clip.start)},` +
+        `${filterNumber(clipEnd(clip))})'[${nextVideo}]`,
+    );
+    currentVideo = nextVideo;
+
+    if (
+      asset.type === "video" &&
+      (await hasAudioStream(asset.path, audioCache))
+    ) {
+      const audioLabel = `audio${index}`;
+      const delay = Math.max(0, Math.round(Number(clip.start) * 1000));
+      filters.push(
+        `[${inputIndex}:a:0]atrim=duration=${filterNumber(clipLength)},` +
+          "asetpts=PTS-STARTPTS,aresample=48000," +
+          `aformat=sample_rates=48000:channel_layouts=stereo,` +
+          `adelay=delays=${delay}:all=1[${audioLabel}]`,
+      );
+      audioLabels.push(audioLabel);
+    }
+  }
+
+  for (let index = 0; index < textClips.length; index += 1) {
+    const clip = textClips[index];
+    const textFile = path.join(temporaryPaths.supportDirectory, `text-${index}.txt`);
+    fs.writeFileSync(textFile, clip.text, "utf8");
+    const nextVideo = `textComposite${index + 1}`;
+    const x = Math.min(100, Math.max(0, Number(clip.x))) / 100;
+    const y = Math.min(100, Math.max(0, Number(clip.y))) / 100;
+    const color = /^#[0-9a-f]{6}$/i.test(clip.color)
+      ? `0x${clip.color.slice(1)}`
+      : "0xFFFFFF";
+    filters.push(
+      `[${currentVideo}]drawtext=fontfile='${escapeFilterPath(fontFile)}':` +
+        `textfile='${escapeFilterPath(textFile)}':reload=0:expansion=none:` +
+        `fontsize=${Math.round(Number(clip.fontSize) || 48)}:fontcolor=${color}:` +
+        `x=(w-text_w)*${filterNumber(x)}:y=(h-text_h)*${filterNumber(y)}:` +
+        `enable='between(t,${filterNumber(clip.start)},${filterNumber(clipEnd(clip))})'` +
+        `[${nextVideo}]`,
+    );
+    currentVideo = nextVideo;
+  }
+
+  filters.push(
+    `[${currentVideo}]trim=duration=${filterNumber(duration)},fps=30,format=yuv420p,` +
+      "setparams=range=limited:color_primaries=bt709:color_trc=bt709:" +
+      "colorspace=bt709[vout]",
+  );
+
+  if (audioLabels.length > 0) {
+    filters.push(
+      `${audioLabels.map((label) => `[${label}]`).join("")}` +
+        `amix=inputs=${audioLabels.length}:duration=longest:dropout_transition=0:` +
+        `normalize=0,alimiter=limit=0.95,apad,atrim=duration=${filterNumber(duration)}[aout]`,
+    );
+  } else {
+    filters.push(
+      `anullsrc=channel_layout=stereo:sample_rate=48000,` +
+        `atrim=duration=${filterNumber(duration)}[aout]`,
+    );
+  }
+
+  return {
+    duration,
+    filterGraph: filters.join(";"),
+    inputArgs,
+  };
+}
+
+function runFfmpeg(args, duration, onProgress) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("ffmpeg", args, {
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let progressBuffer = "";
+    let errorOutput = "";
+
+    child.stdout.on("data", (chunk) => {
+      progressBuffer += chunk.toString("utf8");
+      const lines = progressBuffer.split(/\r?\n/);
+      progressBuffer = lines.pop() || "";
+      for (const line of lines) {
+        const [key, rawValue] = line.split("=", 2);
+        if (key === "out_time_us") {
+          const seconds = Number(rawValue) / 1_000_000;
+          onProgress?.(Math.min(0.99, Math.max(0, seconds / duration)));
+        } else if (key === "progress" && rawValue === "end") {
+          onProgress?.(1);
+        }
+      }
+    });
+
+    child.stderr.on("data", (chunk) => {
+      if (errorOutput.length < 2 * 1024 * 1024) errorOutput += chunk.toString("utf8");
+    });
+    child.on("error", (error) => reject(error));
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`FFmpeg export failed${errorOutput.trim() ? `: ${errorOutput.trim()}` : ""}`));
+    });
+  });
+}
+
+async function exportProject(project, outputPath, options = {}) {
+  const output = path.resolve(outputPath);
+  if (path.extname(output).toLowerCase() !== ".mp4") {
+    throw new Error("Export output must use the .mp4 extension");
+  }
+  if (fs.existsSync(output) && !options.force) {
+    throw new Error(`Output already exists: ${output}`);
+  }
+
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  const temporaryPaths = makeTemporaryPaths(output);
+  const plan = await buildExportPlan(project, temporaryPaths);
+  const args = [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-y",
+    ...plan.inputArgs,
+    "-filter_complex",
+    plan.filterGraph,
+    "-map",
+    "[vout]",
+    "-map",
+    "[aout]",
+    "-map_metadata",
+    "-1",
+    "-map_metadata:s",
+    "-1",
+    "-map_chapters",
+    "-1",
+    "-sn",
+    "-dn",
+    "-c:v",
+    "libx264",
+    "-preset",
+    "medium",
+    "-crf",
+    "20",
+    "-pix_fmt",
+    "yuv420p",
+    "-profile:v",
+    "high",
+    "-level:v",
+    "4.1",
+    "-flags:v",
+    "+bitexact",
+    "-bsf:v",
+    "filter_units=remove_types=6",
+    "-color_range",
+    "tv",
+    "-colorspace",
+    "bt709",
+    "-color_trc",
+    "bt709",
+    "-color_primaries",
+    "bt709",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "192k",
+    "-ar",
+    "48000",
+    "-ac",
+    "2",
+    "-flags:a",
+    "+bitexact",
+    "-metadata",
+    "encoder=",
+    "-metadata",
+    "creation_time=",
+    "-metadata:s:v:0",
+    "language=und",
+    "-metadata:s:v:0",
+    "handler_name=VideoHandler",
+    "-metadata:s:v:0",
+    "vendor_id=[0][0][0][0]",
+    "-metadata:s:v:0",
+    "encoder=",
+    "-metadata:s:a:0",
+    "language=und",
+    "-metadata:s:a:0",
+    "handler_name=SoundHandler",
+    "-metadata:s:a:0",
+    "vendor_id=[0][0][0][0]",
+    "-metadata:s:a:0",
+    "encoder=",
+    "-brand",
+    "isom",
+    "-fflags",
+    "+bitexact",
+    "-t",
+    filterNumber(plan.duration),
+    "-progress",
+    "pipe:1",
+    "-nostats",
+    temporaryPaths.output,
+  ];
+
+  try {
+    await runFfmpeg(args, plan.duration, options.onProgress);
+    removeMoovMetadataBoxes(temporaryPaths.output);
+    const verification = await verifyFile(temporaryPaths.output);
+    if (!verification.ok) {
+      throw new Error(`Export failed privacy verification:\n- ${verification.issues.join("\n- ")}`);
+    }
+    if (fs.existsSync(output)) fs.rmSync(output, { force: true });
+    fs.renameSync(temporaryPaths.output, output);
+    return {
+      output,
+      duration: plan.duration,
+      verification: { ...verification, file: output },
+    };
+  } finally {
+    if (fs.existsSync(temporaryPaths.output)) {
+      fs.rmSync(temporaryPaths.output, { force: true });
+    }
+    const supportRoot = path.resolve(temporaryPaths.supportDirectory);
+    const outputRoot = path.resolve(path.dirname(output));
+    if (supportRoot.startsWith(`${outputRoot}${path.sep}`) && fs.existsSync(supportRoot)) {
+      fs.rmSync(supportRoot, { recursive: true, force: true });
+    }
+  }
+}
+
+module.exports = {
+  buildExportPlan,
+  escapeFilterPath,
+  exportProject,
+  findSystemFont,
+  projectDuration,
+};

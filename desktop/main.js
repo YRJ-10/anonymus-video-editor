@@ -22,6 +22,7 @@ const {
   parseProject,
   serializeProject,
 } = require("./project-file");
+const { exportProject } = require("../src/export-project");
 
 app.commandLine.appendSwitch("disable-background-networking");
 app.commandLine.appendSwitch("disable-component-update");
@@ -88,6 +89,11 @@ function createWindow() {
               typeof window.EditorHistory?.undo === "function" &&
               document.querySelector("#undo") &&
               document.querySelector("#save-project")
+            ),
+            hasPhase6Ui: Boolean(
+              typeof window.anonEditor?.exportVideo === "function" &&
+              document.querySelector("#export-video") &&
+              document.querySelector("#export-dialog")
             ),
           })
         `);
@@ -196,6 +202,43 @@ async function openProject() {
   };
 }
 
+async function exportVideo(_event, projectInput) {
+  const project = parseProject(serializeProject(projectInput));
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "Export anonymous video",
+    buttonLabel: "Export 1080p",
+    defaultPath: "anonymous-video.mp4",
+    filters: [{ name: "MP4 Video", extensions: ["mp4"] }],
+  });
+  if (result.canceled || !result.filePath) return null;
+  const destination = result.filePath.endsWith(".mp4")
+    ? result.filePath
+    : `${result.filePath}.mp4`;
+
+  mainWindow.webContents.send("export:progress", {
+    progress: 0,
+    stage: "Rendering timeline",
+  });
+  const exported = await exportProject(project, destination, {
+    force: true,
+    onProgress: (progress) => {
+      mainWindow.webContents.send("export:progress", {
+        progress,
+        stage: progress >= 1 ? "Verifying anonymous output" : "Rendering timeline",
+      });
+    },
+  });
+  mainWindow.webContents.send("export:progress", {
+    progress: 1,
+    stage: "Export verified",
+  });
+  return {
+    output: exported.output,
+    duration: exported.duration,
+    verification: exported.verification.summary,
+  };
+}
+
 function createMenu() {
   return Menu.buildFromTemplate([
     {
@@ -210,6 +253,11 @@ function createMenu() {
           label: "Save project",
           accelerator: "CmdOrCtrl+S",
           click: () => mainWindow?.webContents.send("project:request-save"),
+        },
+        {
+          label: "Export 1080p",
+          accelerator: "CmdOrCtrl+E",
+          click: () => mainWindow?.webContents.send("export:request"),
         },
         { type: "separator" },
         {
@@ -236,6 +284,7 @@ app.whenReady().then(() => {
   ipcMain.handle("media:pick", pickMedia);
   ipcMain.handle("project:save", saveProject);
   ipcMain.handle("project:open", openProject);
+  ipcMain.handle("export:video", exportVideo);
   Menu.setApplicationMenu(createMenu());
   createWindow();
 

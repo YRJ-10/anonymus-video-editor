@@ -10,8 +10,15 @@ const elements = {
   redo: document.querySelector("#redo"),
   copyClip: document.querySelector("#copy-clip"),
   pasteClip: document.querySelector("#paste-clip"),
+  exportVideo: document.querySelector("#export-video"),
   projectName: document.querySelector("#project-name"),
   appStatus: document.querySelector("#app-status"),
+  exportDialog: document.querySelector("#export-dialog"),
+  exportTitle: document.querySelector("#export-title"),
+  exportProgress: document.querySelector("#export-progress"),
+  exportStage: document.querySelector("#export-stage"),
+  exportVerification: document.querySelector("#export-verification"),
+  closeExport: document.querySelector("#close-export"),
   addMedia: document.querySelector("#add-media"),
   addToTimeline: document.querySelector("#add-to-timeline"),
   addText: document.querySelector("#add-text"),
@@ -82,6 +89,7 @@ const state = {
   history: null,
   clipboard: null,
   statusTimer: null,
+  exportInProgress: false,
 };
 
 function activeMediaElement() {
@@ -139,6 +147,7 @@ function updateEditControls() {
   elements.redo.disabled = !state.history || !History.canRedo(state.history);
   elements.copyClip.disabled = !selectedClip();
   elements.pasteClip.disabled = !state.clipboard;
+  elements.exportVideo.disabled = state.clips.length === 0 || state.exportInProgress;
 }
 
 function commitEdit() {
@@ -276,6 +285,43 @@ async function openProject() {
     );
   } catch (error) {
     showStatus(`Could not open project: ${error.message}`, true);
+  }
+}
+
+async function exportTimeline() {
+  if (state.exportInProgress || state.clips.length === 0) return;
+  state.exportInProgress = true;
+  updateEditControls();
+  elements.exportTitle.textContent = "Rendering 1080p video";
+  elements.exportProgress.value = 0;
+  elements.exportStage.textContent = "Choose the output file…";
+  elements.exportVerification.textContent = "";
+  elements.exportVerification.classList.remove("error");
+  elements.closeExport.hidden = true;
+  if (!elements.exportDialog.open) elements.exportDialog.showModal();
+
+  try {
+    const result = await window.anonEditor.exportVideo(projectPayload());
+    if (!result) {
+      elements.exportDialog.close();
+      return;
+    }
+    elements.exportProgress.value = 1;
+    elements.exportTitle.textContent = "Anonymous export complete";
+    elements.exportStage.textContent = result.output;
+    elements.exportVerification.textContent =
+      "Source metadata: 0 · Chapters: 0 · Privacy verification passed";
+    elements.closeExport.hidden = false;
+    showStatus("1080p export completed and verified");
+  } catch (error) {
+    elements.exportTitle.textContent = "Export blocked";
+    elements.exportStage.textContent = "No output file was published.";
+    elements.exportVerification.textContent = error.message;
+    elements.exportVerification.classList.add("error");
+    elements.closeExport.hidden = false;
+  } finally {
+    state.exportInProgress = false;
+    updateEditControls();
   }
 }
 
@@ -1072,6 +1118,8 @@ function applyTextDialog() {
 elements.addMedia.addEventListener("click", addMedia);
 elements.addToTimeline.addEventListener("click", addSelectedAssetToTimeline);
 elements.addTrack.addEventListener("click", addTrack);
+elements.exportVideo.addEventListener("click", exportTimeline);
+elements.closeExport.addEventListener("click", () => elements.exportDialog.close());
 elements.openProject.addEventListener("click", openProject);
 elements.saveProject.addEventListener("click", saveProject);
 elements.undo.addEventListener("click", undoEdit);
@@ -1089,6 +1137,13 @@ elements.textForm.addEventListener("submit", (event) => {
 window.anonEditor.onPickRequested(addMedia);
 window.anonEditor.onOpenProjectRequested(openProject);
 window.anonEditor.onSaveProjectRequested(saveProject);
+window.anonEditor.onExportRequested(exportTimeline);
+window.anonEditor.onExportProgress(({ progress, stage }) => {
+  if (!state.exportInProgress) return;
+  elements.exportProgress.value = clamp(Number(progress) || 0, 0, 1);
+  elements.exportStage.textContent = stage;
+  if (progress >= 1) elements.exportTitle.textContent = "Verifying anonymous output";
+});
 
 elements.video.addEventListener("loadedmetadata", () => {
   const asset = state.assets.find((candidate) => candidate.path === state.loadedAssetPath);
@@ -1261,6 +1316,9 @@ document.addEventListener("keydown", (event) => {
   if (command && key === "s") {
     event.preventDefault();
     saveProject();
+  } else if (command && key === "e") {
+    event.preventDefault();
+    exportTimeline();
   } else if (command && key === "z" && event.shiftKey) {
     event.preventDefault();
     redoEdit();

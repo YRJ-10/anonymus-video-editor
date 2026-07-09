@@ -34,6 +34,9 @@
             <span aria-hidden="true">＋</span>
             Add media
           </button>
+          <button id="export-video" class="export-button" type="button" title="Export 1080p">
+            Export
+          </button>
         </div>
 
         <div class="privacy-status" title="Remote network requests are blocked">
@@ -211,6 +214,20 @@
           <button class="primary-button" type="submit">Apply text</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="export-dialog" class="export-dialog">
+      <div class="export-dialog-content">
+        <div class="export-mark" aria-hidden="true">A</div>
+        <div>
+          <span class="eyebrow">ANONYMOUS EXPORT</span>
+          <h2 id="export-title">Rendering 1080p video</h2>
+        </div>
+        <progress id="export-progress" max="1" value="0"></progress>
+        <p id="export-stage">Preparing timeline…</p>
+        <div id="export-verification" class="export-verification"></div>
+        <button id="close-export" type="button" hidden>Done</button>
+      </div>
     </dialog>
 
     <script src="./timeline-model.js"></script>
