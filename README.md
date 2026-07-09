@@ -10,12 +10,15 @@ Development currently covers:
 - **Phase 3:** the editable V1 timeline with playhead, move, trim, slice,
   delete, and timeline zoom.
 - **Phase 4:** multi-track video/photo overlays and positioned text annotations.
+- **Phase 5:** copy/paste, undo/redo, and local `.anonproj` project files.
 
 See [the Phase 1 contract](docs/phase-1-contract.md) for its strict output
 allowlist and [the Phase 2 foundation](docs/phase-2-foundation.md) for the
 desktop security boundary and preview features. Timeline behavior is documented
 in [the Phase 3 timeline](docs/phase-3-timeline.md), with compositing described
-in [the Phase 4 overlays](docs/phase-4-overlays.md).
+in [the Phase 4 overlays](docs/phase-4-overlays.md). Local editing state and
+project persistence are covered by
+[the Phase 5 project guide](docs/phase-5-project-editing.md).
 
 ## Requirements
 

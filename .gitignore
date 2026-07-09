@@ -20,6 +20,7 @@ temp/
 *.temp
 *.log
 *.pid
+*.anonproj
 
 # Local configuration and secrets
 .env

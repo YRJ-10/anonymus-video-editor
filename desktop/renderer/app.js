@@ -1,8 +1,17 @@
 "use strict";
 
 const Timeline = window.TimelineModel;
+const History = window.EditorHistory;
 
 const elements = {
+  openProject: document.querySelector("#open-project"),
+  saveProject: document.querySelector("#save-project"),
+  undo: document.querySelector("#undo"),
+  redo: document.querySelector("#redo"),
+  copyClip: document.querySelector("#copy-clip"),
+  pasteClip: document.querySelector("#paste-clip"),
+  projectName: document.querySelector("#project-name"),
+  appStatus: document.querySelector("#app-status"),
   addMedia: document.querySelector("#add-media"),
   addToTimeline: document.querySelector("#add-to-timeline"),
   addText: document.querySelector("#add-text"),
@@ -70,6 +79,9 @@ const state = {
   compositionSignature: "",
   textDialogMode: "add",
   textDrag: null,
+  history: null,
+  clipboard: null,
+  statusTimer: null,
 };
 
 function activeMediaElement() {
@@ -106,6 +118,198 @@ function topClipAtPlayhead() {
 
 function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+function captureEditingState() {
+  return {
+    assets: structuredClone(state.assets),
+    tracks: structuredClone(state.tracks),
+    clips: structuredClone(state.clips),
+    activeTrackId: state.activeTrackId,
+    selectedPath: state.selectedPath,
+    selectedClipId: state.selectedClipId,
+    playhead: state.playhead,
+    pixelsPerSecond: state.pixelsPerSecond,
+    timelinePreview: state.timelinePreview,
+  };
+}
+
+function updateEditControls() {
+  elements.undo.disabled = !state.history || !History.canUndo(state.history);
+  elements.redo.disabled = !state.history || !History.canRedo(state.history);
+  elements.copyClip.disabled = !selectedClip();
+  elements.pasteClip.disabled = !state.clipboard;
+}
+
+function commitEdit() {
+  if (!state.history) {
+    state.history = History.create(captureEditingState());
+  } else {
+    state.history = History.commit(state.history, captureEditingState());
+  }
+  updateEditControls();
+}
+
+function restoreEditingState(snapshot) {
+  elements.video.pause();
+  pauseOverlayVideos();
+  state.assets = structuredClone(snapshot.assets);
+  state.tracks = structuredClone(snapshot.tracks);
+  state.clips = structuredClone(snapshot.clips);
+  state.activeTrackId = snapshot.activeTrackId;
+  state.selectedPath = snapshot.selectedPath;
+  state.selectedClipId = snapshot.selectedClipId;
+  state.playhead = snapshot.playhead;
+  state.pixelsPerSecond = snapshot.pixelsPerSecond;
+  state.timelinePreview = snapshot.timelinePreview;
+  state.loadedAssetPath = null;
+  state.baseClipId = null;
+  state.compositionSignature = "";
+  state.pendingVideoSeek = null;
+  elements.video.removeAttribute("src");
+  elements.image.removeAttribute("src");
+  elements.video.classList.remove("visible");
+  elements.image.classList.remove("visible");
+  elements.overlayStage.replaceChildren();
+  elements.timelineZoom.value = String(state.pixelsPerSecond);
+
+  renderAssets();
+  renderTimeline();
+  if (state.timelinePreview) {
+    renderComposition();
+  } else {
+    const asset = selectedAsset();
+    if (asset && !asset.missing) selectAsset(asset, { keepView: true });
+    else {
+      elements.previewEmpty.classList.remove("hidden");
+      elements.selectedName.textContent = "Nothing selected";
+      elements.play.disabled = true;
+      elements.seek.disabled = true;
+    }
+  }
+  updateEditControls();
+}
+
+function undoEdit() {
+  if (!state.history) return;
+  const next = History.undo(state.history);
+  if (next === state.history) return;
+  state.history = next;
+  restoreEditingState(state.history.present);
+}
+
+function redoEdit() {
+  if (!state.history) return;
+  const next = History.redo(state.history);
+  if (next === state.history) return;
+  state.history = next;
+  restoreEditingState(state.history.present);
+}
+
+function showStatus(message, error = false) {
+  clearTimeout(state.statusTimer);
+  elements.appStatus.textContent = message;
+  elements.appStatus.classList.toggle("error", error);
+  elements.appStatus.classList.add("visible");
+  state.statusTimer = setTimeout(() => {
+    elements.appStatus.classList.remove("visible");
+  }, 3200);
+}
+
+function projectPayload() {
+  return {
+    format: "anon-editor-project",
+    version: 1,
+    assets: state.assets.map(({ path, name, type, duration }) => ({
+      path,
+      name,
+      type,
+      duration,
+    })),
+    tracks: structuredClone(state.tracks),
+    clips: structuredClone(state.clips),
+    activeTrackId: state.activeTrackId,
+    playhead: state.playhead,
+    pixelsPerSecond: state.pixelsPerSecond,
+  };
+}
+
+async function saveProject() {
+  try {
+    const result = await window.anonEditor.saveProject(projectPayload());
+    if (!result) return;
+    elements.projectName.textContent = result.name;
+    showStatus(`Project saved: ${result.name}`);
+  } catch (error) {
+    showStatus(`Could not save project: ${error.message}`, true);
+  }
+}
+
+async function openProject() {
+  try {
+    const result = await window.anonEditor.openProject();
+    if (!result) return;
+    const project = result.project;
+    state.assets = project.assets;
+    state.tracks = project.tracks;
+    state.clips = project.clips;
+    state.activeTrackId = project.activeTrackId;
+    state.playhead = project.playhead;
+    state.pixelsPerSecond = project.pixelsPerSecond;
+    state.selectedPath = project.assets[0]?.path || null;
+    state.selectedClipId = null;
+    state.timelinePreview = project.clips.length > 0;
+    state.loadedAssetPath = null;
+    state.baseClipId = null;
+    state.compositionSignature = "";
+    state.pendingVideoSeek = null;
+    elements.timelineZoom.value = String(state.pixelsPerSecond);
+    elements.projectName.textContent = result.name;
+    state.history = History.create(captureEditingState());
+    restoreEditingState(state.history.present);
+    const missing = result.missingPaths.length;
+    showStatus(
+      missing
+        ? `Project opened with ${missing} missing media file${missing === 1 ? "" : "s"}`
+        : `Project opened: ${result.name}`,
+      missing > 0,
+    );
+  } catch (error) {
+    showStatus(`Could not open project: ${error.message}`, true);
+  }
+}
+
+function copySelectedClip() {
+  const clip = selectedClip();
+  if (!clip) return;
+  state.clipboard = structuredClone(clip);
+  updateEditControls();
+  showStatus("Clip copied");
+}
+
+function pasteClipboardClip() {
+  if (!state.clipboard) return;
+  if (
+    state.clipboard.type !== "text" &&
+    !state.assets.some((asset) => asset.path === state.clipboard.assetPath)
+  ) {
+    showStatus("The copied clip's media is not available", true);
+    return;
+  }
+
+  const clip = {
+    ...structuredClone(state.clipboard),
+    id: crypto.randomUUID(),
+    trackId: state.activeTrackId,
+    start: state.playhead,
+  };
+  state.clips = [...state.clips, clip];
+  state.selectedClipId = clip.id;
+  state.timelinePreview = true;
+  renderTimeline();
+  renderComposition();
+  commitEdit();
+  showStatus(`Clip pasted to ${state.activeTrackId.toUpperCase()}`);
 }
 
 function formatTime(seconds) {
@@ -182,7 +386,9 @@ function renderAssets() {
     name.textContent = asset.name;
     const type = document.createElement("span");
     type.textContent =
-      asset.type === "video"
+      asset.missing
+        ? "Missing file"
+        : asset.type === "video"
         ? Number.isFinite(asset.duration)
           ? `${formatTime(asset.duration)} video`
           : "Loading video…"
@@ -191,6 +397,10 @@ function renderAssets() {
 
     button.append(icon, copy);
     button.addEventListener("click", () => {
+      if (asset.missing) {
+        showStatus(`Missing media: ${asset.path}`, true);
+        return;
+      }
       state.selectedClipId = null;
       state.timelinePreview = false;
       state.baseClipId = null;
@@ -289,18 +499,21 @@ async function addMedia() {
     if (!picked) return;
 
     let asset = state.assets.find((item) => item.path === picked.path);
+    let added = false;
     if (!asset) {
       asset = {
         ...picked,
         duration: picked.type === "image" ? 5 : null,
       };
       state.assets.push(asset);
+      added = true;
     }
 
     state.selectedClipId = null;
     state.timelinePreview = false;
     selectAsset(asset);
     renderTimeline();
+    if (added) commitEdit();
   } finally {
     elements.addMedia.disabled = false;
   }
@@ -322,6 +535,7 @@ function addSelectedAssetToTimeline() {
   renderTimeline();
   renderComposition();
   ensurePlayheadVisible();
+  commitEdit();
 }
 
 function rulerStep() {
@@ -341,6 +555,7 @@ function updateTimelineControls() {
   elements.deleteClip.disabled = !clip;
   elements.editText.disabled = clip?.type !== "text";
   elements.timelineTimecode.textContent = formatTimelineTime(state.playhead);
+  updateEditControls();
 }
 
 function updatePlayheadVisual() {
@@ -389,13 +604,14 @@ function beginClipDrag(event, clipId, mode) {
   renderTimeline();
 }
 
-function addTrack() {
+function addTrack(recordHistory = true) {
   const number = state.tracks.length + 1;
   const track = { id: `v${number}`, name: `V${number}` };
   state.tracks.push(track);
   state.activeTrackId = track.id;
   renderTimeline();
   updateAddToTimelineButton();
+  if (recordHistory) commitEdit();
   return track;
 }
 
@@ -580,6 +796,7 @@ function splitAtPlayhead() {
   state.selectedClipId = result.rightId;
   renderTimeline();
   renderComposition();
+  commitEdit();
 }
 
 function deleteSelectedClip() {
@@ -590,6 +807,7 @@ function deleteSelectedClip() {
   elements.video.pause();
   renderTimeline();
   renderComposition();
+  commitEdit();
 }
 
 function handleTimelinePointerMove(event) {
@@ -632,9 +850,11 @@ function handleTimelinePointerMove(event) {
 
 function endTimelineDrag() {
   if (!state.timelineDrag) return;
+  const completedDrag = state.timelineDrag;
   state.timelineDrag = null;
   renderTimeline();
   renderComposition();
+  if (completedDrag.mode !== "playhead") commitEdit();
 }
 
 function compositionKey(activeClips, baseClip) {
@@ -691,7 +911,7 @@ function renderComposition() {
 
   if (baseClip) {
     const asset = assetForClip(baseClip);
-    if (asset) {
+    if (asset && !asset.missing) {
       if (asset.type === "video") {
         state.pendingVideoSeek = baseClip.sourceIn + (state.playhead - baseClip.start);
       }
@@ -702,6 +922,12 @@ function renderComposition() {
       });
       elements.selectedName.textContent = "Timeline composition";
       applyPendingVideoSeek();
+    } else {
+      elements.video.pause();
+      elements.video.classList.remove("visible");
+      elements.image.classList.remove("visible");
+      elements.play.disabled = true;
+      elements.seek.disabled = true;
     }
   } else {
     elements.video.pause();
@@ -822,7 +1048,7 @@ function applyTextDialog() {
       color,
     });
   } else {
-    if (state.tracks.length === 1) addTrack();
+    if (state.tracks.length === 1) addTrack(false);
     const clip = Timeline.createTextClip({
       id: crypto.randomUUID(),
       text,
@@ -840,11 +1066,18 @@ function applyTextDialog() {
   elements.textDialog.close();
   renderTimeline();
   renderComposition();
+  commitEdit();
 }
 
 elements.addMedia.addEventListener("click", addMedia);
 elements.addToTimeline.addEventListener("click", addSelectedAssetToTimeline);
 elements.addTrack.addEventListener("click", addTrack);
+elements.openProject.addEventListener("click", openProject);
+elements.saveProject.addEventListener("click", saveProject);
+elements.undo.addEventListener("click", undoEdit);
+elements.redo.addEventListener("click", redoEdit);
+elements.copyClip.addEventListener("click", copySelectedClip);
+elements.pasteClip.addEventListener("click", pasteClipboardClip);
 elements.addText.addEventListener("click", () => openTextDialog("add"));
 elements.editText.addEventListener("click", () => openTextDialog("edit"));
 elements.closeTextDialog.addEventListener("click", () => elements.textDialog.close());
@@ -854,6 +1087,8 @@ elements.textForm.addEventListener("submit", (event) => {
   applyTextDialog();
 });
 window.anonEditor.onPickRequested(addMedia);
+window.anonEditor.onOpenProjectRequested(openProject);
+window.anonEditor.onSaveProjectRequested(saveProject);
 
 elements.video.addEventListener("loadedmetadata", () => {
   const asset = state.assets.find((candidate) => candidate.path === state.loadedAssetPath);
@@ -987,11 +1222,15 @@ document.addEventListener("pointermove", (event) => {
 });
 document.addEventListener("pointerup", () => {
   endTimelineDrag();
+  const movedText = Boolean(state.textDrag);
   state.textDrag = null;
+  if (movedText) commitEdit();
 });
 document.addEventListener("pointercancel", () => {
   endTimelineDrag();
+  const movedText = Boolean(state.textDrag);
   state.textDrag = null;
+  if (movedText) commitEdit();
 });
 
 elements.splitClip.addEventListener("click", splitAtPlayhead);
@@ -1017,7 +1256,30 @@ document.addEventListener("keydown", (event) => {
   const tag = event.target.tagName;
   if (["INPUT", "TEXTAREA", "SELECT"].includes(tag)) return;
 
-  if (event.key.toLowerCase() === "s") {
+  const command = event.ctrlKey || event.metaKey;
+  const key = event.key.toLowerCase();
+  if (command && key === "s") {
+    event.preventDefault();
+    saveProject();
+  } else if (command && key === "z" && event.shiftKey) {
+    event.preventDefault();
+    redoEdit();
+  } else if (command && key === "z") {
+    event.preventDefault();
+    undoEdit();
+  } else if (command && key === "y") {
+    event.preventDefault();
+    redoEdit();
+  } else if (command && key === "c") {
+    event.preventDefault();
+    copySelectedClip();
+  } else if (command && key === "v") {
+    event.preventDefault();
+    pasteClipboardClip();
+  } else if (command && event.shiftKey && key === "o") {
+    event.preventDefault();
+    openProject();
+  } else if (key === "s") {
     event.preventDefault();
     splitAtPlayhead();
   } else if (event.key === "Delete") {
@@ -1027,4 +1289,6 @@ document.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("resize", renderTimeline);
+state.history = History.create(captureEditingState());
+updateEditControls();
 requestAnimationFrame(renderTimeline);

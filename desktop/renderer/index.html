@@ -17,14 +17,24 @@
           <span class="brand-mark" aria-hidden="true">A</span>
           <div>
             <strong>Anon Editor</strong>
-            <span>Offline workspace</span>
+            <span id="project-name">Untitled project</span>
           </div>
         </div>
 
-        <button id="add-media" class="primary-button" type="button">
-          <span aria-hidden="true">＋</span>
-          Add video or photo
-        </button>
+        <div class="top-actions">
+          <button id="open-project" type="button" title="Open project">Open</button>
+          <button id="save-project" type="button" title="Save project (Ctrl+S)">Save</button>
+          <span class="toolbar-divider"></span>
+          <button id="undo" type="button" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
+          <button id="redo" type="button" title="Redo (Ctrl+Y)" disabled>↷ Redo</button>
+          <button id="copy-clip" type="button" title="Copy clip (Ctrl+C)" disabled>Copy</button>
+          <button id="paste-clip" type="button" title="Paste clip (Ctrl+V)" disabled>Paste</button>
+          <span class="toolbar-divider"></span>
+          <button id="add-media" class="primary-button" type="button">
+            <span aria-hidden="true">＋</span>
+            Add media
+          </button>
+        </div>
 
         <div class="privacy-status" title="Remote network requests are blocked">
           <span class="status-dot" aria-hidden="true"></span>
@@ -160,6 +170,8 @@
       </main>
     </div>
 
+    <div id="app-status" class="app-status" role="status" aria-live="polite"></div>
+
     <dialog id="text-dialog" class="text-dialog">
       <form id="text-form" method="dialog">
         <div class="dialog-heading">
@@ -202,6 +214,7 @@
     </dialog>
 
     <script src="./timeline-model.js"></script>
+    <script src="./editor-history.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>
