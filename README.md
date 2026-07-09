@@ -8,8 +8,6 @@ transform controls, detached audio, and 1080p landscape or portrait export.
 
 ![Anon Editor interface](./anon-editor-screenshot.png)
 
-Place one application screenshot in the repository root with the filename
-`anon-editor-screenshot.png`.
 
 ## File anonymity
 
