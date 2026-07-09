@@ -792,6 +792,31 @@ function applyPendingVideoSeek() {
   updatePlayback();
 }
 
+function continueTimelinePlaybackAt(boundary) {
+  if (!state.timelinePreview) return false;
+  const nextClips = Timeline.findClipsAt(state.clips, boundary + 0.0001);
+  const hasPlayableClip = nextClips.some((clip) =>
+    ["video", "audio"].includes(clip.type),
+  );
+  if (!hasPlayableClip) return false;
+
+  state.playhead = boundary;
+  renderComposition();
+  const media = playbackElement();
+  if (!media) return false;
+
+  const resume = async () => {
+    try {
+      await media.play();
+    } catch (error) {
+      showStatus(error.message || "Could not continue timeline playback", true);
+    }
+  };
+  if (media.readyState >= 1) resume();
+  else media.addEventListener("loadedmetadata", resume, { once: true });
+  return true;
+}
+
 function selectAsset(asset, options = {}) {
   const {
     keepView = false,
@@ -858,32 +883,48 @@ function selectAsset(asset, options = {}) {
 async function addMedia() {
   elements.addMedia.disabled = true;
   try {
-    const picked = await window.anonEditor.pickMedia();
-    if (!picked) return;
+    const result = await window.anonEditor.pickMedia();
+    const pickedItems = Array.isArray(result) ? result : result ? [result] : [];
+    if (pickedItems.length === 0) return;
 
-    let asset = state.assets.find((item) => item.path === picked.path);
-    let added = false;
-    if (!asset) {
-      asset = {
-        ...picked,
-        duration: picked.type === "image" ? 5 : null,
-      };
-      state.assets.push(asset);
-      added = true;
-    } else {
-      if (!asset.width && picked.width) {
-        asset.width = picked.width;
-        asset.height = picked.height;
+    let selected = null;
+    let changed = false;
+    let addedCount = 0;
+    for (const picked of pickedItems) {
+      let asset = state.assets.find((item) => item.path === picked.path);
+      if (!asset) {
+        asset = {
+          ...picked,
+          duration: picked.type === "image" ? 5 : null,
+        };
+        state.assets.push(asset);
+        changed = true;
+        addedCount += 1;
+      } else {
+        if (!asset.width && picked.width) {
+          asset.width = picked.width;
+          asset.height = picked.height;
+          changed = true;
+        }
+        if (picked.hasAudio && !asset.hasAudio) {
+          asset.hasAudio = true;
+          changed = true;
+        }
       }
-      if (picked.hasAudio) asset.hasAudio = true;
+      selected ||= asset;
     }
 
-    const detectedCanvas = detectCanvasFromAsset(asset, false);
+    const detectedCanvas = detectCanvasFromAsset(selected, false);
     state.selectedClipId = null;
     state.timelinePreview = false;
-    selectAsset(asset);
+    selectAsset(selected);
     renderTimeline();
-    if (added || detectedCanvas) commitEdit();
+    if (changed || detectedCanvas) commitEdit();
+    showStatus(
+      addedCount > 0
+        ? `${addedCount} media file${addedCount === 1 ? "" : "s"} added`
+        : "Selected media already exists in this project",
+    );
   } finally {
     elements.addMedia.disabled = false;
   }
@@ -1826,8 +1867,10 @@ elements.video.addEventListener("timeupdate", () => {
   if (!clip || clip.assetPath !== state.loadedAssetPath) return;
 
   if (elements.video.currentTime >= clip.sourceOut - 0.02) {
+    const boundary = Timeline.clipEnd(clip);
+    if (continueTimelinePlaybackAt(boundary)) return;
     elements.video.pause();
-    state.playhead = Timeline.clipEnd(clip);
+    state.playhead = boundary;
   } else if (elements.video.currentTime >= clip.sourceIn) {
     state.playhead = clip.start + (elements.video.currentTime - clip.sourceIn);
   }

@@ -56,6 +56,7 @@ test("timeline split preserves total duration and source continuity", () => {
   assert.equal(result.clips[0].sourceOut, 4);
   assert.equal(result.clips[1].sourceIn, 4);
   assert.equal(result.clips[1].start, 4);
+  assert.equal(Timeline.findClipAt(result.clips, 4).id, "right");
   assert.equal(
     Timeline.clipDuration(result.clips[0]) + Timeline.clipDuration(result.clips[1]),
     10,

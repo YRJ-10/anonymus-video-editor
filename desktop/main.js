@@ -119,6 +119,7 @@ function createWindow() {
               typeof window.TimelineModel?.snapTime === "function"
             ),
             hasPhase10Ui: Boolean(
+              document.querySelector(".audio-controls > .text-controls") &&
               document.querySelector("#detach-audio") &&
               document.querySelector("#audio-volume") &&
               document.querySelector("#mute-audio") &&
@@ -146,7 +147,7 @@ async function pickMedia() {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: "Add video or photo",
     buttonLabel: "Add to project",
-    properties: ["openFile"],
+    properties: ["openFile", "multiSelections"],
     filters: [
       {
         name: "Video and photos",
@@ -159,39 +160,43 @@ async function pickMedia() {
 
   if (result.canceled || result.filePaths.length === 0) return null;
 
-  const filePath = result.filePaths[0];
-  const type = classifyMediaFile(filePath);
-  if (!type) {
+  const supportedPaths = result.filePaths.filter((filePath) => classifyMediaFile(filePath));
+  if (supportedPaths.length === 0) {
     await dialog.showMessageBox(mainWindow, {
       type: "error",
       title: "Unsupported file",
       message: "Anon Editor currently accepts video and photo files only.",
     });
-    return null;
+    return [];
   }
 
-  let dimensions = { width: 0, height: 0 };
-  let hasAudio = false;
-  try {
-    const probe = await probeFile(filePath);
-    const visualStream = (probe.streams || []).find(
-      (stream) => stream.codec_type === "video",
-    );
-    dimensions = displayDimensions(visualStream);
-    hasAudio = (probe.streams || []).some((stream) => stream.codec_type === "audio");
-  } catch {
-    // The renderer can still attempt to load the media and read its dimensions.
-  }
-
-  return Object.freeze({
-    name: path.basename(filePath),
-    path: filePath,
-    type,
-    url: pathToFileURL(filePath).href,
-    width: dimensions.width || null,
-    height: dimensions.height || null,
-    hasAudio,
-  });
+  const media = await Promise.all(
+    supportedPaths.map(async (filePath) => {
+      const type = classifyMediaFile(filePath);
+      let dimensions = { width: 0, height: 0 };
+      let hasAudio = false;
+      try {
+        const probe = await probeFile(filePath);
+        const visualStream = (probe.streams || []).find(
+          (stream) => stream.codec_type === "video",
+        );
+        dimensions = displayDimensions(visualStream);
+        hasAudio = (probe.streams || []).some((stream) => stream.codec_type === "audio");
+      } catch {
+        // The renderer can still load each selected file and inspect it locally.
+      }
+      return Object.freeze({
+        name: path.basename(filePath),
+        path: filePath,
+        type,
+        url: pathToFileURL(filePath).href,
+        width: dimensions.width || null,
+        height: dimensions.height || null,
+        hasAudio,
+      });
+    }),
+  );
+  return Object.freeze(media);
 }
 
 async function saveProject(_event, project) {
