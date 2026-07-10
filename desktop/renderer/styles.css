@@ -1221,6 +1221,44 @@ kbd {
   accent-color: #7465e4;
 }
 
+.crop-dialog {
+  position: fixed;
+  top: 92px;
+  right: 22px;
+  left: auto;
+  width: min(360px, calc(100vw - 44px));
+  margin: 0;
+  border-color: rgba(116, 101, 228, 0.42);
+  background: rgba(25, 26, 31, 0.96);
+  box-shadow:
+    0 18px 60px rgba(0, 0, 0, 0.52),
+    0 0 0 1px rgba(116, 101, 228, 0.08);
+}
+
+.crop-dialog::backdrop {
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.crop-dialog form {
+  gap: 13px;
+  padding: 16px;
+}
+
+.crop-dialog .dialog-heading h2 {
+  font-size: 15px;
+}
+
+.crop-dialog .crop-grid {
+  gap: 10px;
+}
+
+.crop-dialog .dialog-actions button {
+  min-height: 31px;
+  padding: 0 10px;
+  font-size: 10px;
+}
+
 .text-dialog p {
   margin: -5px 0 0;
   color: #747781;

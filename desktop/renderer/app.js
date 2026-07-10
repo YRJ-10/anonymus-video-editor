@@ -43,6 +43,7 @@ const elements = {
   cropBottom: document.querySelector("#crop-bottom"),
   closeCropDialog: document.querySelector("#close-crop-dialog"),
   cancelCrop: document.querySelector("#cancel-crop"),
+  resetCrop: document.querySelector("#reset-crop"),
   addMedia: document.querySelector("#add-media"),
   addToTimeline: document.querySelector("#add-to-timeline"),
   addText: document.querySelector("#add-text"),
@@ -1851,7 +1852,7 @@ function openCropDialog() {
   elements.cropRight.value = String(Math.round(crop.right * 100));
   elements.cropTop.value = String(Math.round(crop.top * 100));
   elements.cropBottom.value = String(Math.round(crop.bottom * 100));
-  elements.cropDialog.showModal();
+  if (!elements.cropDialog.open) elements.cropDialog.show();
 }
 
 function cancelCropDialog() {
@@ -1864,6 +1865,14 @@ function cancelCropDialog() {
   }
   state.cropOriginal = null;
   elements.cropDialog.close();
+}
+
+function resetCropDialog() {
+  elements.cropLeft.value = "0";
+  elements.cropRight.value = "0";
+  elements.cropTop.value = "0";
+  elements.cropBottom.value = "0";
+  previewCrop();
 }
 
 function applyCropDialog() {
@@ -1909,6 +1918,7 @@ elements.cropForm.addEventListener("submit", (event) => {
 });
 elements.closeCropDialog.addEventListener("click", cancelCropDialog);
 elements.cancelCrop.addEventListener("click", cancelCropDialog);
+elements.resetCrop.addEventListener("click", resetCropDialog);
 elements.cropDialog.addEventListener("cancel", (event) => {
   event.preventDefault();
   cancelCropDialog();
