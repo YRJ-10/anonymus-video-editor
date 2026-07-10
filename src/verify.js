@@ -3,6 +3,7 @@
 const path = require("node:path");
 const { probeFile } = require("./probe");
 const { inspectMp4, validateMp4Bitstreams, validateMp4Structure } = require("./mp4");
+const { validateRawFileAnonymity } = require("./raw-verify");
 
 const FORMAT_TAG_RULES = Object.freeze({
   major_brand: new Set(["isom"]),
@@ -124,6 +125,7 @@ async function verifyFile(filePath, expectations = {}) {
   }
 
   try {
+    issues.push(...validateRawFileAnonymity(resolvedPath));
     mp4 = inspectMp4(resolvedPath);
     issues.push(...validateMp4Structure(mp4));
     issues.push(...validateMp4Bitstreams(mp4));

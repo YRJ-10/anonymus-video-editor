@@ -17,6 +17,7 @@
     "test:phase7": "node --test test/desktop.test.js test/multitrack.test.js test/export.test.js",
     "test:phase11": "node --test test/phase1.test.js",
     "test:phase12": "node --test test/phase12.test.js",
+    "test:phase13": "node --test test/phase13.test.js",
     "test:desktop:smoke": "electron . --smoke-test"
   },
   "devDependencies": {
