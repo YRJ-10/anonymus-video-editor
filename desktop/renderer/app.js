@@ -478,12 +478,12 @@ function prepareExportDialog() {
   state.lastExportPath = null;
   elements.exportTitle.textContent = "Export anonymous MP4";
   elements.exportProgress.value = 0;
-  elements.exportProgress.hidden = true;
+  elements.exportProgress.hidden = false;
   elements.exportStage.textContent =
     "Choose compression. Output stays MP4 and must pass privacy verification.";
   elements.exportQualityRow.hidden = false;
   elements.exportVerification.textContent = "";
-  elements.exportVerification.classList.remove("error");
+  elements.exportVerification.classList.remove("error", "verified");
   elements.exportActions.hidden = false;
   elements.exportResultActions.hidden = true;
   elements.showExportFolder.hidden = false;
@@ -502,7 +502,7 @@ async function exportTimeline() {
   elements.exportProgress.value = 0;
   elements.exportStage.textContent = "Choose the output file…";
   elements.exportVerification.textContent = "";
-  elements.exportVerification.classList.remove("error");
+  elements.exportVerification.classList.remove("error", "verified");
   elements.exportQualityRow.hidden = true;
   elements.exportActions.hidden = true;
   elements.exportResultActions.hidden = true;
@@ -520,8 +520,13 @@ async function exportTimeline() {
     elements.exportProgress.value = 1;
     elements.exportTitle.textContent = "Anonymous export complete";
     elements.exportStage.textContent = result.output;
-    elements.exportVerification.textContent =
-      `Preset: ${result.quality || elements.exportQuality.value} · Source metadata: 0 · Chapters: 0 · Privacy verification passed`;
+    elements.exportVerification.classList.add("verified");
+    elements.exportVerification.innerHTML = `
+      <span class="verification-pill">Source metadata <strong>0</strong></span>
+      <span class="verification-pill">Chapters <strong>0</strong></span>
+      <span class="verification-pill privacy-pass">Privacy verification passed</span>
+      <span class="verification-preset">Preset: ${result.quality || elements.exportQuality.value}</span>
+    `;
     elements.exportResultActions.hidden = false;
     elements.showExportFolder.hidden = false;
     elements.openExportFile.hidden = false;
@@ -531,6 +536,7 @@ async function exportTimeline() {
     elements.exportStage.textContent = "No output file was published.";
     elements.exportVerification.textContent = error.message;
     elements.exportVerification.classList.add("error");
+    elements.exportVerification.classList.remove("verified");
     elements.exportResultActions.hidden = false;
     elements.showExportFolder.hidden = true;
     elements.openExportFile.hidden = true;
