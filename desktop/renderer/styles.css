@@ -11,6 +11,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   width: 100%;
@@ -1436,7 +1440,9 @@ kbd {
 
 .export-primary-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  grid-template-columns: 1fr 1fr;
+  max-width: 338px;
+  margin: 0 auto;
 }
 
 .export-result-actions {
@@ -1454,7 +1460,11 @@ kbd {
 }
 
 .export-primary-actions button {
+  width: 100%;
   min-height: 37px;
+  justify-content: center;
+  justify-self: stretch;
+  font-size: 13px;
 }
 
 .export-result-actions button {
