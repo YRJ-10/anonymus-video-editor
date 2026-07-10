@@ -134,6 +134,64 @@
     };
   }
 
+  function normalizeBlurKeyframes(keyframes, duration = 5, fallbackEffect = null) {
+    if (!Array.isArray(keyframes)) return [];
+    const maximum = Math.max(MIN_CLIP_DURATION, finiteNumber(Number(duration), 5));
+    const byTime = new Map();
+    for (const keyframe of keyframes) {
+      const time = roundTime(clampNumber(keyframe?.time, 0, maximum));
+      byTime.set(time, {
+        time,
+        effect: normalizeBlurEffect(keyframe?.effect || fallbackEffect),
+      });
+    }
+    return [...byTime.values()].sort((left, right) => left.time - right.time);
+  }
+
+  function interpolateBlurEffect(left, right, ratio) {
+    const amount = clampNumber(ratio, 0, 1);
+    const lerp = (start, end) => start + (end - start) * amount;
+    return normalizeBlurEffect({
+      x: lerp(left.x, right.x),
+      y: lerp(left.y, right.y),
+      width: lerp(left.width, right.width),
+      height: lerp(left.height, right.height),
+      strength: lerp(left.strength, right.strength),
+    });
+  }
+
+  function blurEffectAt(clip, timelineTime) {
+    const fallback = normalizeBlurEffect(clip?.effect);
+    if (!clip || clip.type !== "blur") return fallback;
+    const assetDuration = Math.max(
+      clip.sourceOut || 0,
+      clip.assetDuration || 0,
+      MIN_CLIP_DURATION,
+    );
+    const keyframes = normalizeBlurKeyframes(clip.keyframes, assetDuration, fallback);
+    if (keyframes.length === 0) return fallback;
+
+    const sourceTime = roundTime(
+      clampNumber(
+        clip.sourceIn + finiteNumber(Number(timelineTime), clip.start) - clip.start,
+        0,
+        assetDuration,
+      ),
+    );
+    if (sourceTime <= keyframes[0].time) return keyframes[0].effect;
+    const last = keyframes[keyframes.length - 1];
+    if (sourceTime >= last.time) return last.effect;
+    for (let index = 0; index < keyframes.length - 1; index += 1) {
+      const left = keyframes[index];
+      const right = keyframes[index + 1];
+      if (sourceTime >= left.time && sourceTime <= right.time) {
+        const span = Math.max(0.0001, right.time - left.time);
+        return interpolateBlurEffect(left.effect, right.effect, (sourceTime - left.time) / span);
+      }
+    }
+    return fallback;
+  }
+
   function createBlurClip({
     id,
     trackId = "v2",
@@ -155,6 +213,7 @@
       sourceOut: roundTime(normalizedDuration),
       assetDuration: roundTime(normalizedDuration),
       effect: normalizeBlurEffect(effect),
+      keyframes: [],
     };
   }
 
@@ -348,8 +407,63 @@
           ...normalizeBlurEffect(clip.effect),
           ...(changes.effect || changes),
         }),
+        keyframes: normalizeBlurKeyframes(
+          changes.keyframes ?? clip.keyframes,
+          clip.sourceIn + duration,
+          clip.effect,
+        ),
         sourceOut: roundTime(clip.sourceIn + duration),
         assetDuration: roundTime(clip.sourceIn + duration),
+      };
+    });
+  }
+
+  function updateBlurClipAtTime(clips, clipId, timelineTime, changes) {
+    return updateClip(clips, clipId, (clip) => {
+      if (clip.type !== "blur") return clip;
+      const assetDuration = Math.max(
+        clip.sourceOut || 0,
+        clip.assetDuration || 0,
+        MIN_CLIP_DURATION,
+      );
+      const sourceTime = roundTime(
+        clampNumber(
+          clip.sourceIn + finiteNumber(Number(timelineTime), clip.start) - clip.start,
+          0,
+          assetDuration,
+        ),
+      );
+      const current = blurEffectAt(clip, timelineTime);
+      const nextEffect = normalizeBlurEffect({
+        ...current,
+        ...(changes.effect || changes),
+      });
+      const keyframes = normalizeBlurKeyframes(clip.keyframes, assetDuration, clip.effect);
+      if (keyframes.length === 0) {
+        keyframes.push({
+          time: roundTime(clip.sourceIn),
+          effect: blurEffectAt(clip, clip.start),
+        });
+      }
+      const existing = keyframes.find((keyframe) => Math.abs(keyframe.time - sourceTime) <= 0.0334);
+      if (existing) existing.effect = nextEffect;
+      else keyframes.push({ time: sourceTime, effect: nextEffect });
+      const normalizedKeyframes = normalizeBlurKeyframes(keyframes, assetDuration, nextEffect);
+      return {
+        ...clip,
+        effect: normalizedKeyframes[0]?.effect || nextEffect,
+        keyframes: normalizedKeyframes,
+      };
+    });
+  }
+
+  function clearBlurKeyframes(clips, clipId, timelineTime) {
+    return updateClip(clips, clipId, (clip) => {
+      if (clip.type !== "blur") return clip;
+      return {
+        ...clip,
+        effect: blurEffectAt(clip, finiteNumber(Number(timelineTime), clip.start)),
+        keyframes: [],
       };
     });
   }
@@ -382,12 +496,15 @@
     createBlurClip,
     createClip,
     createTextClip,
+    blurEffectAt,
+    clearBlurKeyframes,
     deleteClip,
     findClipAt,
     findClipsAt,
     moveClip,
     normalizeTransform,
     normalizeBlurEffect,
+    normalizeBlurKeyframes,
     snapTime,
     splitClip,
     timelineEnd,
@@ -396,6 +513,7 @@
     trimClipRight,
     updateClipTransform,
     updateAudioClip,
+    updateBlurClipAtTime,
     updateBlurClip,
     updateTextClip,
   });

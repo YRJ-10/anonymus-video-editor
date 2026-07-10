@@ -8,6 +8,7 @@ const { probeFile } = require("./probe");
 const { verifyFile } = require("./verify");
 const { removeMoovMetadataBoxes } = require("./mp4");
 const {
+  blurEffectAt,
   normalizeBlurEffect,
   normalizeTransform,
 } = require("../desktop/renderer/timeline-model");
@@ -97,6 +98,56 @@ async function hasAudioStream(filePath, cache) {
     );
   }
   return cache.get(filePath);
+}
+
+function blurRegionForEffect(canvas, effect) {
+  const normalized = normalizeBlurEffect(effect);
+  const regionWidth = Math.max(
+    2,
+    Math.min(canvas.width, Math.round((canvas.width * (normalized.width / 100)) / 2) * 2),
+  );
+  const regionHeight = Math.max(
+    2,
+    Math.min(canvas.height, Math.round((canvas.height * (normalized.height / 100)) / 2) * 2),
+  );
+  const x = Math.min(
+    canvas.width - regionWidth,
+    Math.max(0, Math.round(canvas.width * (normalized.x / 100) - regionWidth / 2)),
+  );
+  const y = Math.min(
+    canvas.height - regionHeight,
+    Math.max(0, Math.round(canvas.height * (normalized.y / 100) - regionHeight / 2)),
+  );
+  return {
+    x,
+    y,
+    width: regionWidth,
+    height: regionHeight,
+    strength: Math.max(
+      1,
+      Math.min(normalized.strength, Math.floor(Math.min(regionWidth, regionHeight) / 2)),
+    ),
+  };
+}
+
+function blurSegmentsForClip(clip) {
+  const start = Number(clip.start);
+  const end = clipEnd(clip);
+  const duration = Math.max(0, end - start);
+  if (duration <= 0) return [];
+  const hasTracking = Array.isArray(clip.keyframes) && clip.keyframes.length > 1;
+  const step = hasTracking ? 0.25 : duration;
+  const segments = [];
+  for (let cursor = start; cursor < end - 0.0001; cursor += step) {
+    const segmentEnd = Math.min(end, cursor + step);
+    const midpoint = cursor + (segmentEnd - cursor) / 2;
+    segments.push({
+      start: cursor,
+      end: segmentEnd,
+      effect: blurEffectAt(clip, midpoint),
+    });
+  }
+  return segments;
 }
 
 async function buildExportPlan(project, temporaryPaths) {
@@ -276,43 +327,28 @@ async function buildExportPlan(project, temporaryPaths) {
 
   for (let index = 0; index < blurClips.length; index += 1) {
     const clip = blurClips[index];
-    const effect = normalizeBlurEffect(clip.effect);
-    const regionWidth = Math.max(
-      2,
-      Math.round((canvas.width * (effect.width / 100)) / 2) * 2,
-    );
-    const regionHeight = Math.max(
-      2,
-      Math.round((canvas.height * (effect.height / 100)) / 2) * 2,
-    );
-    const x = Math.min(
-      canvas.width - regionWidth,
-      Math.max(0, Math.round(canvas.width * (effect.x / 100) - regionWidth / 2)),
-    );
-    const y = Math.min(
-      canvas.height - regionHeight,
-      Math.max(0, Math.round(canvas.height * (effect.y / 100) - regionHeight / 2)),
-    );
-    const blurRadius = Math.max(
-      1,
-      Math.min(effect.strength, Math.floor(Math.min(regionWidth, regionHeight) / 2)),
-    );
-    const baseLabel = `blurBase${index}`;
-    const sourceLabel = `blurSource${index}`;
-    const blurredLabel = `blurredRegion${index}`;
-    const nextVideo = `blurComposite${index + 1}`;
-    filters.push(`[${currentVideo}]split=2[${baseLabel}][${sourceLabel}]`);
-    filters.push(
-      `[${sourceLabel}]crop=w=${regionWidth}:h=${regionHeight}:x=${x}:y=${y},` +
-        `boxblur=luma_radius=${blurRadius}:luma_power=1:` +
-        `chroma_radius=${blurRadius}:chroma_power=1[${blurredLabel}]`,
-    );
-    filters.push(
-      `[${baseLabel}][${blurredLabel}]overlay=x=${x}:y=${y}:eof_action=pass:` +
-        `shortest=0:enable='between(t,${filterNumber(clip.start)},` +
-        `${filterNumber(clipEnd(clip))})'[${nextVideo}]`,
-    );
-    currentVideo = nextVideo;
+    const segments = blurSegmentsForClip(clip);
+    for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+      const segment = segments[segmentIndex];
+      const region = blurRegionForEffect(canvas, segment.effect);
+      const label = `${index}_${segmentIndex}`;
+      const baseLabel = `blurBase${label}`;
+      const sourceLabel = `blurSource${label}`;
+      const blurredLabel = `blurredRegion${label}`;
+      const nextVideo = `blurComposite${label}`;
+      filters.push(`[${currentVideo}]split=2[${baseLabel}][${sourceLabel}]`);
+      filters.push(
+        `[${sourceLabel}]crop=w=${region.width}:h=${region.height}:x=${region.x}:y=${region.y},` +
+          `boxblur=luma_radius=${region.strength}:luma_power=1:` +
+          `chroma_radius=${region.strength}:chroma_power=1[${blurredLabel}]`,
+      );
+      filters.push(
+        `[${baseLabel}][${blurredLabel}]overlay=x=${region.x}:y=${region.y}:` +
+          `eof_action=pass:shortest=0:enable='between(t,${filterNumber(segment.start)},` +
+          `${filterNumber(segment.end)})'[${nextVideo}]`,
+      );
+      currentVideo = nextVideo;
+    }
   }
 
   for (let index = 0; index < textClips.length; index += 1) {

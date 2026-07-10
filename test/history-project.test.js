@@ -149,6 +149,16 @@ test("project files preserve manual blur clips without media assets", () => {
           height: 20,
           strength: 24,
         },
+        keyframes: [
+          {
+            time: 0,
+            effect: { x: 25, y: 75, width: 40, height: 20, strength: 24 },
+          },
+          {
+            time: 5,
+            effect: { x: 75, y: 25, width: 20, height: 40, strength: 18 },
+          },
+        ],
       },
     ],
     activeTrackId: "v1",
@@ -159,4 +169,6 @@ test("project files preserve manual blur clips without media assets", () => {
   assert.equal(parsed.clips[0].assetPath, null);
   assert.equal(parsed.clips[0].effect.strength, 24);
   assert.equal(parsed.clips[0].effect.width, 40);
+  assert.equal(parsed.clips[0].keyframes.length, 2);
+  assert.equal(parsed.clips[0].keyframes[1].effect.x, 75);
 });

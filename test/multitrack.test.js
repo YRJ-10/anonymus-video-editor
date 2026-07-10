@@ -104,6 +104,35 @@ test("blur clips normalize censor region, strength, and duration", () => {
   assert.equal(Timeline.clipDuration(updated[0]), 2);
 });
 
+test("blur keyframes interpolate tracking position and can be cleared", () => {
+  const blur = Timeline.createBlurClip({
+    id: "blur",
+    trackId: "v2",
+    start: 10,
+    duration: 4,
+    effect: { x: 10, y: 20, width: 20, height: 10, strength: 10 },
+  });
+
+  let clips = Timeline.updateBlurClipAtTime([blur], "blur", 10, {
+    effect: { x: 10, y: 20, width: 20, height: 10, strength: 10 },
+  });
+  clips = Timeline.updateBlurClipAtTime(clips, "blur", 14, {
+    effect: { x: 90, y: 60, width: 40, height: 30, strength: 30 },
+  });
+
+  assert.equal(clips[0].keyframes.length, 2);
+  const middle = Timeline.blurEffectAt(clips[0], 12);
+  assert.equal(middle.x, 50);
+  assert.equal(middle.y, 40);
+  assert.equal(middle.width, 30);
+  assert.equal(middle.height, 20);
+  assert.equal(middle.strength, 20);
+
+  const cleared = Timeline.clearBlurKeyframes(clips, "blur", 12);
+  assert.equal(cleared[0].keyframes.length, 0);
+  assert.equal(cleared[0].effect.x, 50);
+});
+
 test("all overlapping clips are returned for composition", () => {
   const base = Timeline.createClip({ id: "base", asset: videoAsset, trackId: "v1" });
   const overlay = Timeline.createClip({

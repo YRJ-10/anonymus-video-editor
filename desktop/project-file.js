@@ -1,6 +1,10 @@
 "use strict";
 
-const { normalizeBlurEffect, normalizeTransform } = require("./renderer/timeline-model");
+const {
+  normalizeBlurEffect,
+  normalizeBlurKeyframes,
+  normalizeTransform,
+} = require("./renderer/timeline-model");
 
 const PROJECT_FORMAT = "anon-editor-project";
 const PROJECT_VERSION = 1;
@@ -102,6 +106,11 @@ function normalizeProject(input) {
     } else if (type === "blur") {
       normalized.assetName = cleanString(clip.assetName, 512) || "Blur / Sensor";
       normalized.effect = normalizeBlurEffect(clip.effect);
+      normalized.keyframes = normalizeBlurKeyframes(
+        clip.keyframes,
+        normalized.assetDuration,
+        normalized.effect,
+      );
     } else {
       normalized.transform = normalizeTransform(clip.transform, trackId);
       normalized.volume = Math.min(2, Math.max(0, finite(clip.volume, 1)));

@@ -150,6 +150,16 @@ test("project export composites tracks and text, then passes strict privacy veri
           height: 18,
           strength: 18,
         },
+        keyframes: [
+          {
+            time: 0,
+            effect: { x: 20, y: 30, width: 18, height: 14, strength: 12 },
+          },
+          {
+            time: 0.6,
+            effect: { x: 80, y: 70, width: 28, height: 22, strength: 24 },
+          },
+        ],
       },
     ],
   };

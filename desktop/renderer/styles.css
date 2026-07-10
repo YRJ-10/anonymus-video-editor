@@ -614,6 +614,27 @@ button {
   background: rgba(116, 235, 177, 0.13);
 }
 
+.blur-overlay.tracking {
+  border-style: dashed;
+  animation: trackingPulse 1.35s ease-in-out infinite;
+}
+
+@keyframes trackingPulse {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 18px rgba(255, 255, 255, 0.12),
+      0 0 0 1px rgba(0, 0, 0, 0.48),
+      0 0 12px rgba(45, 220, 140, 0.12);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 18px rgba(255, 255, 255, 0.12),
+      0 0 0 1px rgba(0, 0, 0, 0.48),
+      0 0 24px rgba(45, 220, 140, 0.32);
+  }
+}
+
 .blur-overlay::before {
   position: absolute;
   inset: 7px;
@@ -1359,6 +1380,40 @@ kbd {
 
 .blur-dialog .dialog-heading h2 {
   font-size: 15px;
+}
+
+.blur-keyframe-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid rgba(67, 166, 121, 0.24);
+  border-radius: 8px;
+  background: rgba(67, 166, 121, 0.08);
+}
+
+.blur-keyframe-row span {
+  min-width: 0;
+  color: #9fffd0;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.blur-keyframe-row button {
+  min-height: 27px;
+  padding: 0 9px;
+  border: 1px solid rgba(67, 166, 121, 0.35);
+  border-radius: 7px;
+  background: rgba(28, 54, 43, 0.75);
+  color: #d8ffed;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.blur-keyframe-row button:disabled {
+  cursor: default;
+  opacity: 0.42;
 }
 
 .blur-field-row {

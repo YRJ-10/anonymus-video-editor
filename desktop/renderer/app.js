@@ -104,6 +104,8 @@ const elements = {
   blurStrengthValue: document.querySelector("#blur-strength-value"),
   blurWidth: document.querySelector("#blur-width"),
   blurHeight: document.querySelector("#blur-height"),
+  blurKeyframesStatus: document.querySelector("#blur-keyframes-status"),
+  clearBlurKeyframes: document.querySelector("#clear-blur-keyframes"),
   closeBlurDialog: document.querySelector("#close-blur-dialog"),
   cancelBlur: document.querySelector("#cancel-blur"),
   resetBlur: document.querySelector("#reset-blur"),
@@ -686,6 +688,14 @@ function selectedMediaClip() {
 function selectedBlurClip() {
   const clip = selectedClip();
   return clip?.type === "blur" ? clip : null;
+}
+
+function blurTrackingCount(clip) {
+  return Array.isArray(clip?.keyframes) ? clip.keyframes.length : 0;
+}
+
+function blurHasTracking(clip) {
+  return blurTrackingCount(clip) > 0;
 }
 
 function updateTransformControls() {
@@ -1566,6 +1576,14 @@ function updateTextPosition(event) {
   renderComposition();
 }
 
+function applyBlurOverlayStyle(element, effect) {
+  element.style.left = `${effect.x}%`;
+  element.style.top = `${effect.y}%`;
+  element.style.width = `${effect.width}%`;
+  element.style.height = `${effect.height}%`;
+  element.style.setProperty("--blur-preview", `${Math.max(1, effect.strength / 2)}px`);
+}
+
 function beginBlurTransform(event, clipId) {
   const clip = state.clips.find((candidate) => candidate.id === clipId);
   if (!clip || clip.type !== "blur" || event.button !== 0) return;
@@ -1573,7 +1591,7 @@ function beginBlurTransform(event, clipId) {
   event.stopPropagation();
   state.selectedClipId = clipId;
   state.activeTrackId = clip.trackId;
-  const effect = Timeline.normalizeBlurEffect(clip.effect);
+  const effect = Timeline.blurEffectAt(clip, state.playhead);
   state.blurDrag = {
     clipId,
     mode: event.target.dataset.handle ? "resize" : "move",
@@ -1607,7 +1625,9 @@ function updateBlurTransform(event) {
     next.y += deltaY / 2;
   }
 
-  state.clips = Timeline.updateBlurClip(state.clips, drag.clipId, { effect: next });
+  state.clips = Timeline.updateBlurClipAtTime(state.clips, drag.clipId, state.playhead, {
+    effect: next,
+  });
   syncBlurDialogFromClip();
   renderComposition();
 }
@@ -1673,17 +1693,14 @@ function renderComposition() {
     const zIndex = trackOrder(clip.trackId) + 2;
 
     if (clip.type === "blur") {
-      const effect = Timeline.normalizeBlurEffect(clip.effect);
+      const effect = Timeline.blurEffectAt(clip, state.playhead);
       const blur = document.createElement("div");
       blur.className = "blur-overlay";
+      blur.classList.toggle("tracking", blurHasTracking(clip));
       blur.classList.toggle("selected", clip.id === state.selectedClipId);
       blur.dataset.clipId = clip.id;
-      blur.style.left = `${effect.x}%`;
-      blur.style.top = `${effect.y}%`;
-      blur.style.width = `${effect.width}%`;
-      blur.style.height = `${effect.height}%`;
       blur.style.zIndex = String(zIndex + 100);
-      blur.style.setProperty("--blur-preview", `${Math.max(1, effect.strength / 2)}px`);
+      applyBlurOverlayStyle(blur, effect);
       blur.title = "Drag to move. Drag a corner to resize.";
       for (const handle of ["nw", "ne", "sw", "se"]) {
         const grip = document.createElement("span");
@@ -1823,6 +1840,16 @@ function syncCompositionDuringPlayback() {
     const desired = clip.sourceIn + (state.playhead - clip.start);
     if (Math.abs(video.currentTime - desired) > 0.15) video.currentTime = desired;
   }
+  updateActiveBlurOverlays();
+}
+
+function updateActiveBlurOverlays() {
+  for (const overlay of elements.overlayStage.querySelectorAll(".blur-overlay")) {
+    const clip = state.clips.find((candidate) => candidate.id === overlay.dataset.clipId);
+    if (!clip) continue;
+    applyBlurOverlayStyle(overlay, Timeline.blurEffectAt(clip, state.playhead));
+  }
+  syncBlurDialogFromClip();
 }
 
 function openTextDialog(mode) {
@@ -1893,20 +1920,36 @@ function blurValues() {
 function syncBlurDialogFromClip() {
   const clip = selectedBlurClip();
   if (!clip || !elements.blurDialog.open) return;
-  const effect = Timeline.normalizeBlurEffect(clip.effect);
+  const effect = Timeline.blurEffectAt(clip, state.playhead);
+  const count = blurTrackingCount(clip);
   elements.blurDuration.value = String(Timeline.clipDuration(clip));
   elements.blurStrength.value = String(effect.strength);
   elements.blurStrengthValue.textContent = String(effect.strength);
   elements.blurWidth.value = String(Math.round(effect.width));
   elements.blurHeight.value = String(Math.round(effect.height));
+  elements.blurKeyframesStatus.textContent =
+    count > 0
+      ? `${count} tracking keyframe${count === 1 ? "" : "s"}`
+      : "Static blur";
+  elements.clearBlurKeyframes.disabled = count === 0;
 }
 
 function previewBlurDialog() {
   const clip = selectedBlurClip();
   if (!clip) return;
   const values = blurValues();
-  state.clips = Timeline.updateBlurClip(state.clips, clip.id, values);
+  if (blurHasTracking(clip)) {
+    state.clips = Timeline.updateBlurClipAtTime(
+      Timeline.updateBlurClip(state.clips, clip.id, { duration: values.duration }),
+      clip.id,
+      state.playhead,
+      values,
+    );
+  } else {
+    state.clips = Timeline.updateBlurClip(state.clips, clip.id, values);
+  }
   elements.blurStrengthValue.textContent = String(values.effect.strength);
+  syncBlurDialogFromClip();
   renderTimeline();
   renderComposition();
 }
@@ -1945,7 +1988,9 @@ function openBlurDialog(mode) {
   const selected = selectedBlurClip();
   elements.blurDialogTitle.textContent = mode === "edit" ? "Edit blur" : "Add blur";
   elements.blurDuration.value = String(selected ? Timeline.clipDuration(selected) : 5);
-  const effect = Timeline.normalizeBlurEffect(selected?.effect);
+  const effect = selected
+    ? Timeline.blurEffectAt(selected, state.playhead)
+    : Timeline.normalizeBlurEffect(null);
   elements.blurStrength.value = String(effect.strength);
   elements.blurStrengthValue.textContent = String(effect.strength);
   elements.blurWidth.value = String(Math.round(effect.width));
@@ -1953,6 +1998,7 @@ function openBlurDialog(mode) {
   renderTimeline();
   renderComposition();
   if (!elements.blurDialog.open) elements.blurDialog.show();
+  syncBlurDialogFromClip();
 }
 
 function cancelBlurDialog() {
@@ -1985,6 +2031,16 @@ function resetBlurDialog() {
   elements.blurWidth.value = "24";
   elements.blurHeight.value = "16";
   previewBlurDialog();
+}
+
+function clearSelectedBlurTracking() {
+  const clip = selectedBlurClip();
+  if (!clip) return;
+  state.clips = Timeline.clearBlurKeyframes(state.clips, clip.id, state.playhead);
+  syncBlurDialogFromClip();
+  renderTimeline();
+  renderComposition();
+  commitEdit();
 }
 
 function applyBlurDialog() {
@@ -2199,6 +2255,7 @@ elements.blurForm.addEventListener("submit", (event) => {
 elements.closeBlurDialog.addEventListener("click", cancelBlurDialog);
 elements.cancelBlur.addEventListener("click", cancelBlurDialog);
 elements.resetBlur.addEventListener("click", resetBlurDialog);
+elements.clearBlurKeyframes.addEventListener("click", clearSelectedBlurTracking);
 elements.blurDialog.addEventListener("cancel", (event) => {
   event.preventDefault();
   cancelBlurDialog();
