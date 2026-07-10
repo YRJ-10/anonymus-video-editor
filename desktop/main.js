@@ -154,6 +154,7 @@ function createWindow() {
             hasBlurUi: Boolean(
               document.querySelector(".text-controls #add-blur") &&
               document.querySelector(".text-controls #edit-blur") &&
+              document.querySelector(".text-controls #transform-color") &&
               document.querySelector("#blur-dialog") &&
               document.querySelector("#clear-blur-keyframes") &&
               typeof window.TimelineModel?.createBlurClip === "function" &&
