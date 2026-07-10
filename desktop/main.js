@@ -158,7 +158,8 @@ function createWindow() {
               document.querySelector("#clear-blur-keyframes") &&
               typeof window.TimelineModel?.createBlurClip === "function" &&
               typeof window.TimelineModel?.updateBlurClip === "function" &&
-              typeof window.TimelineModel?.blurEffectAt === "function"
+              typeof window.TimelineModel?.blurEffectAt === "function" &&
+              typeof window.TimelineModel?.snapFrameTime === "function"
             ),
           })
         `);

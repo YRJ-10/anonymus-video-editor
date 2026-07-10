@@ -164,6 +164,17 @@ test("project export composites tracks and text, then passes strict privacy veri
     ],
   };
 
+  const plan = await buildExportPlan(project, {
+    output: path.join(tempRoot, "tracked-blur-render.mp4"),
+    supportDirectory: path.join(tempRoot, "tracked-blur-support"),
+  });
+  assert.equal(
+    (plan.filterGraph.match(/overlay=x=.*?\[blurComposite0_/g) || []).length,
+    1,
+  );
+  assert.match(plan.filterGraph, /crop=w=554:h=254:x='if\(lte\(t\\,/);
+  assert.match(plan.filterGraph, /overlay=x='if\(lte\(t\\,/);
+
   const progress = [];
   const result = await exportProject(project, outputFile, {
     force: true,

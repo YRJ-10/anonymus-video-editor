@@ -10,8 +10,11 @@ const { removeMoovMetadataBoxes } = require("./mp4");
 const {
   blurEffectAt,
   normalizeBlurEffect,
+  normalizeBlurKeyframes,
   normalizeTransform,
 } = require("../desktop/renderer/timeline-model");
+
+const BLUR_TRACKING_SAFETY_PADDING_PX = 8;
 
 const EXPORT_QUALITY_PRESETS = Object.freeze({
   high: Object.freeze({
@@ -100,27 +103,33 @@ async function hasAudioStream(filePath, cache) {
   return cache.get(filePath);
 }
 
-function blurRegionForEffect(canvas, effect) {
+function makeEvenSpan(value, maximum) {
+  const span = Math.max(2, Math.min(maximum, Math.round(value)));
+  if (span % 2 === 0) return span;
+  return span < maximum ? span + 1 : span - 1;
+}
+
+function blurRegionForEffect(canvas, effect, padding = 0) {
   const normalized = normalizeBlurEffect(effect);
-  const regionWidth = Math.max(
-    2,
-    Math.min(canvas.width, Math.round((canvas.width * (normalized.width / 100)) / 2) * 2),
+  const baseWidth = makeEvenSpan(canvas.width * (normalized.width / 100), canvas.width);
+  const baseHeight = makeEvenSpan(canvas.height * (normalized.height / 100), canvas.height);
+  const baseX = Math.min(
+    canvas.width - baseWidth,
+    Math.max(0, Math.round(canvas.width * (normalized.x / 100) - baseWidth / 2)),
   );
-  const regionHeight = Math.max(
-    2,
-    Math.min(canvas.height, Math.round((canvas.height * (normalized.height / 100)) / 2) * 2),
+  const baseY = Math.min(
+    canvas.height - baseHeight,
+    Math.max(0, Math.round(canvas.height * (normalized.y / 100) - baseHeight / 2)),
   );
-  const x = Math.min(
-    canvas.width - regionWidth,
-    Math.max(0, Math.round(canvas.width * (normalized.x / 100) - regionWidth / 2)),
-  );
-  const y = Math.min(
-    canvas.height - regionHeight,
-    Math.max(0, Math.round(canvas.height * (normalized.y / 100) - regionHeight / 2)),
-  );
+  const left = Math.max(0, baseX - padding);
+  const top = Math.max(0, baseY - padding);
+  const right = Math.min(canvas.width, baseX + baseWidth + padding);
+  const bottom = Math.min(canvas.height, baseY + baseHeight + padding);
+  const regionWidth = makeEvenSpan(right - left, canvas.width - left);
+  const regionHeight = makeEvenSpan(bottom - top, canvas.height - top);
   return {
-    x,
-    y,
+    x: left,
+    y: top,
     width: regionWidth,
     height: regionHeight,
     strength: Math.max(
@@ -130,24 +139,95 @@ function blurRegionForEffect(canvas, effect) {
   };
 }
 
-function blurSegmentsForClip(clip) {
+function blurExpression(points, field) {
+  if (points.length === 0) return "0";
+  const values = points.map((point) => ({
+    time: Number(point.time),
+    value: Number(point[field]),
+  }));
+  const build = (index) => {
+    const current = values[index];
+    if (index === 0) {
+      return `if(lte(t\\,${filterNumber(current.time)})\\,${filterNumber(current.value)}\\,${build(index + 1)})`;
+    }
+    if (index >= values.length - 1) return filterNumber(current.value);
+    const next = values[index + 1];
+    const span = Math.max(0.0001, next.time - current.time);
+    const linear =
+      `${filterNumber(current.value)}+(${filterNumber(next.value - current.value)})*` +
+      `(t-${filterNumber(current.time)})/${filterNumber(span)}`;
+    return `if(lte(t\\,${filterNumber(next.time)})\\,${linear}\\,${build(index + 1)})`;
+  };
+  return build(0);
+}
+
+function trackedBlurRegionForClip(canvas, clip) {
+  const duration = Math.max(clip.sourceOut || 0, clip.assetDuration || 0, clipDuration(clip));
+  const keyframes = normalizeBlurKeyframes(clip.keyframes, duration, clip.effect);
+  const sourceStart = Number(clip.sourceIn) || 0;
+  const sourceEnd = Number(clip.sourceOut) || sourceStart + clipDuration(clip);
+  const points = [
+    { time: Number(clip.start), effect: blurEffectAt(clip, Number(clip.start)) },
+    ...keyframes
+      .filter((keyframe) => keyframe.time >= sourceStart && keyframe.time <= sourceEnd)
+      .map((keyframe) => ({
+        time: Number(clip.start) + (keyframe.time - sourceStart),
+        effect: keyframe.effect,
+      })),
+    { time: clipEnd(clip), effect: blurEffectAt(clip, clipEnd(clip)) },
+  ]
+    .sort((left, right) => left.time - right.time)
+    .filter((point, index, list) => index === 0 || Math.abs(point.time - list[index - 1].time) > 0.0001);
+  const baseRegions = points.map((point) =>
+    blurRegionForEffect(canvas, point.effect, BLUR_TRACKING_SAFETY_PADDING_PX),
+  );
+  const width = makeEvenSpan(
+    Math.max(...baseRegions.map((region) => region.width)),
+    canvas.width,
+  );
+  const height = makeEvenSpan(
+    Math.max(...baseRegions.map((region) => region.height)),
+    canvas.height,
+  );
+  const strength = Math.max(...baseRegions.map((region) => region.strength));
+  const positioned = points.map((point) => {
+    const effect = normalizeBlurEffect(point.effect);
+    const x = Math.min(
+      canvas.width - width,
+      Math.max(0, Math.round(canvas.width * (effect.x / 100) - width / 2)),
+    );
+    const y = Math.min(
+      canvas.height - height,
+      Math.max(0, Math.round(canvas.height * (effect.y / 100) - height / 2)),
+    );
+    return { time: point.time, x, y };
+  });
+
+  return {
+    start: Number(clip.start),
+    end: clipEnd(clip),
+    x: blurExpression(positioned, "x"),
+    y: blurExpression(positioned, "y"),
+    width,
+    height,
+    strength,
+  };
+}
+
+function blurRegionsForClip(canvas, clip) {
   const start = Number(clip.start);
   const end = clipEnd(clip);
   const duration = Math.max(0, end - start);
   if (duration <= 0) return [];
   const hasTracking = Array.isArray(clip.keyframes) && clip.keyframes.length > 1;
-  const step = hasTracking ? 0.25 : duration;
-  const segments = [];
-  for (let cursor = start; cursor < end - 0.0001; cursor += step) {
-    const segmentEnd = Math.min(end, cursor + step);
-    const midpoint = cursor + (segmentEnd - cursor) / 2;
-    segments.push({
-      start: cursor,
-      end: segmentEnd,
-      effect: blurEffectAt(clip, midpoint),
-    });
-  }
-  return segments;
+  if (hasTracking) return [trackedBlurRegionForClip(canvas, clip)];
+  return [
+    {
+      start,
+      end,
+      ...blurRegionForEffect(canvas, blurEffectAt(clip, start), 0),
+    },
+  ];
 }
 
 async function buildExportPlan(project, temporaryPaths) {
@@ -327,25 +407,25 @@ async function buildExportPlan(project, temporaryPaths) {
 
   for (let index = 0; index < blurClips.length; index += 1) {
     const clip = blurClips[index];
-    const segments = blurSegmentsForClip(clip);
-    for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
-      const segment = segments[segmentIndex];
-      const region = blurRegionForEffect(canvas, segment.effect);
-      const label = `${index}_${segmentIndex}`;
+    const regions = blurRegionsForClip(canvas, clip);
+    for (let regionIndex = 0; regionIndex < regions.length; regionIndex += 1) {
+      const region = regions[regionIndex];
+      const label = `${index}_${regionIndex}`;
       const baseLabel = `blurBase${label}`;
       const sourceLabel = `blurSource${label}`;
       const blurredLabel = `blurredRegion${label}`;
       const nextVideo = `blurComposite${label}`;
       filters.push(`[${currentVideo}]split=2[${baseLabel}][${sourceLabel}]`);
       filters.push(
-        `[${sourceLabel}]crop=w=${region.width}:h=${region.height}:x=${region.x}:y=${region.y},` +
+        `[${sourceLabel}]crop=w=${region.width}:h=${region.height}:` +
+          `x='${region.x}':y='${region.y}',` +
           `boxblur=luma_radius=${region.strength}:luma_power=1:` +
           `chroma_radius=${region.strength}:chroma_power=1[${blurredLabel}]`,
       );
       filters.push(
-        `[${baseLabel}][${blurredLabel}]overlay=x=${region.x}:y=${region.y}:` +
-          `eof_action=pass:shortest=0:enable='between(t,${filterNumber(segment.start)},` +
-          `${filterNumber(segment.end)})'[${nextVideo}]`,
+        `[${baseLabel}][${blurredLabel}]overlay=x='${region.x}':y='${region.y}':` +
+          `eof_action=pass:shortest=0:enable='between(t,${filterNumber(region.start)},` +
+          `${filterNumber(region.end)})'[${nextVideo}]`,
       );
       currentVideo = nextVideo;
     }

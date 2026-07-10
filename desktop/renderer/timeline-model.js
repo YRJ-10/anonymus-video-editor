@@ -5,6 +5,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function createTimelineModel() {
   "use strict";
 
+  const FRAME_RATE = 30;
+  const FRAME_DURATION = 1 / FRAME_RATE;
   const MIN_CLIP_DURATION = 0.1;
 
   function finiteNumber(value, fallback = 0) {
@@ -13,6 +15,12 @@
 
   function roundTime(value) {
     return Math.round(value * 10000) / 10000;
+  }
+
+  function snapFrameTime(time) {
+    return roundTime(
+      Math.max(0, finiteNumber(Math.round(Number(time) * FRAME_RATE) / FRAME_RATE)),
+    );
   }
 
   function clipDuration(clip) {
@@ -139,7 +147,7 @@
     const maximum = Math.max(MIN_CLIP_DURATION, finiteNumber(Number(duration), 5));
     const byTime = new Map();
     for (const keyframe of keyframes) {
-      const time = roundTime(clampNumber(keyframe?.time, 0, maximum));
+      const time = snapFrameTime(clampNumber(keyframe?.time, 0, maximum));
       byTime.set(time, {
         time,
         effect: normalizeBlurEffect(keyframe?.effect || fallbackEffect),
@@ -171,7 +179,7 @@
     const keyframes = normalizeBlurKeyframes(clip.keyframes, assetDuration, fallback);
     if (keyframes.length === 0) return fallback;
 
-    const sourceTime = roundTime(
+    const sourceTime = snapFrameTime(
       clampNumber(
         clip.sourceIn + finiteNumber(Number(timelineTime), clip.start) - clip.start,
         0,
@@ -426,7 +434,7 @@
         clip.assetDuration || 0,
         MIN_CLIP_DURATION,
       );
-      const sourceTime = roundTime(
+      const sourceTime = snapFrameTime(
         clampNumber(
           clip.sourceIn + finiteNumber(Number(timelineTime), clip.start) - clip.start,
           0,
@@ -488,6 +496,8 @@
   }
 
   return Object.freeze({
+    FRAME_DURATION,
+    FRAME_RATE,
     MIN_CLIP_DURATION,
     appendClip,
     clipDuration,
@@ -505,6 +515,7 @@
     normalizeTransform,
     normalizeBlurEffect,
     normalizeBlurKeyframes,
+    snapFrameTime,
     snapTime,
     splitClip,
     timelineEnd,

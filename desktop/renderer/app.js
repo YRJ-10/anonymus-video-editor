@@ -1348,6 +1348,17 @@ function setPlayhead(time, syncPreview = true) {
   updatePlayheadVisual();
 }
 
+function stepPlayheadFrames(frameDelta) {
+  if (Timeline.timelineEnd(state.clips) <= 0) return;
+  elements.video.pause();
+  pauseOverlayVideos();
+  const nextTime = Timeline.snapFrameTime(
+    state.playhead + frameDelta / Timeline.FRAME_RATE,
+  );
+  setPlayhead(nextTime);
+  ensurePlayheadVisible();
+}
+
 function timelineTimeFromPointer(event) {
   const rect = elements.timelineContent.getBoundingClientRect();
   return Math.max(0, (event.clientX - rect.left) / state.pixelsPerSecond);
@@ -2544,6 +2555,12 @@ document.addEventListener("keydown", (event) => {
   } else if (!command && event.code === "Space") {
     event.preventDefault();
     togglePlayback();
+  } else if (!command && event.key === "ArrowRight") {
+    event.preventDefault();
+    stepPlayheadFrames(event.shiftKey ? 10 : 1);
+  } else if (!command && event.key === "ArrowLeft") {
+    event.preventDefault();
+    stepPlayheadFrames(event.shiftKey ? -10 : -1);
   } else if (!command && key === "q") {
     event.preventDefault();
     state.timelineSnapEnabled = !state.timelineSnapEnabled;

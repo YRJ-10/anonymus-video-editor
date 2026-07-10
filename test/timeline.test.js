@@ -28,6 +28,13 @@ test("timeline magnet snaps near grid lines and leaves distant times free", () =
   assert.equal(Timeline.snapTime(0.02, 100), 0);
 });
 
+test("frame stepping snaps to the 30 fps export grid", () => {
+  assert.equal(Timeline.FRAME_RATE, 30);
+  assert.equal(Timeline.snapFrameTime(1 / 30), 0.0333);
+  assert.equal(Timeline.snapFrameTime(0.049), 0.0333);
+  assert.equal(Timeline.snapFrameTime(0.051), 0.0667);
+});
+
 test("detached audio inherits the video source range and audio level", () => {
   const video = {
     ...Timeline.createClip({ id: "video", asset: videoAsset }),
