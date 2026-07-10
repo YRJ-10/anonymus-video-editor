@@ -2,6 +2,7 @@
 
 const Timeline = window.TimelineModel;
 const History = window.EditorHistory;
+const BLUR_EXPORT_SAFE_PADDING_PX = 8;
 
 const elements = {
   newProject: document.querySelector("#new-project"),
@@ -1587,12 +1588,137 @@ function updateTextPosition(event) {
   renderComposition();
 }
 
+function evenSpan(value, maximum) {
+  const span = Math.max(2, Math.min(maximum, Math.round(value)));
+  if (span % 2 === 0) return span;
+  return span < maximum ? span + 1 : span - 1;
+}
+
+function blurPixelRegion(effect, padding = 0) {
+  const canvas = currentCanvas();
+  const normalized = Timeline.normalizeBlurEffect(effect);
+  const baseWidth = evenSpan(canvas.width * (normalized.width / 100), canvas.width);
+  const baseHeight = evenSpan(canvas.height * (normalized.height / 100), canvas.height);
+  const baseX = Math.min(
+    canvas.width - baseWidth,
+    Math.max(0, Math.round(canvas.width * (normalized.x / 100) - baseWidth / 2)),
+  );
+  const baseY = Math.min(
+    canvas.height - baseHeight,
+    Math.max(0, Math.round(canvas.height * (normalized.y / 100) - baseHeight / 2)),
+  );
+  const left = Math.max(0, baseX - padding);
+  const top = Math.max(0, baseY - padding);
+  const right = Math.min(canvas.width, baseX + baseWidth + padding);
+  const bottom = Math.min(canvas.height, baseY + baseHeight + padding);
+  return {
+    x: left,
+    y: top,
+    width: evenSpan(right - left, canvas.width - left),
+    height: evenSpan(bottom - top, canvas.height - top),
+  };
+}
+
+function blurTrackingPoints(clip) {
+  const duration = Math.max(
+    clip.sourceOut || 0,
+    clip.assetDuration || 0,
+    Timeline.clipDuration(clip),
+  );
+  const sourceStart = Number(clip.sourceIn) || 0;
+  const sourceEnd = Number(clip.sourceOut) || sourceStart + Timeline.clipDuration(clip);
+  const keyframes = Timeline.normalizeBlurKeyframes(clip.keyframes, duration, clip.effect);
+  return [
+    { time: Number(clip.start), effect: Timeline.blurEffectAt(clip, Number(clip.start)) },
+    ...keyframes
+      .filter((keyframe) => keyframe.time >= sourceStart && keyframe.time <= sourceEnd)
+      .map((keyframe) => ({
+        time: Number(clip.start) + (keyframe.time - sourceStart),
+        effect: keyframe.effect,
+      })),
+    { time: Timeline.clipEnd(clip), effect: Timeline.blurEffectAt(clip, Timeline.clipEnd(clip)) },
+  ]
+    .sort((left, right) => left.time - right.time)
+    .filter((point, index, list) => index === 0 || Math.abs(point.time - list[index - 1].time) > 0.0001);
+}
+
+function interpolateTrackingPosition(points, timelineTime) {
+  if (points.length === 0) return { x: 0, y: 0 };
+  const time = Number(timelineTime);
+  if (time <= points[0].time) return points[0];
+  const last = points[points.length - 1];
+  if (time >= last.time) return last;
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const left = points[index];
+    const right = points[index + 1];
+    if (time >= left.time && time <= right.time) {
+      const span = Math.max(0.0001, right.time - left.time);
+      const amount = (time - left.time) / span;
+      return {
+        x: left.x + (right.x - left.x) * amount,
+        y: left.y + (right.y - left.y) * amount,
+      };
+    }
+  }
+  return last;
+}
+
+function exportSafeBlurRegion(clip) {
+  const canvas = currentCanvas();
+  if (!blurHasTracking(clip)) {
+    return blurPixelRegion(Timeline.blurEffectAt(clip, state.playhead), 0);
+  }
+
+  const points = blurTrackingPoints(clip);
+  const baseRegions = points.map((point) =>
+    blurPixelRegion(point.effect, BLUR_EXPORT_SAFE_PADDING_PX),
+  );
+  const width = evenSpan(
+    Math.max(...baseRegions.map((region) => region.width)),
+    canvas.width,
+  );
+  const height = evenSpan(
+    Math.max(...baseRegions.map((region) => region.height)),
+    canvas.height,
+  );
+  const positioned = points.map((point) => {
+    const effect = Timeline.normalizeBlurEffect(point.effect);
+    return {
+      time: point.time,
+      x: Math.min(
+        canvas.width - width,
+        Math.max(0, Math.round(canvas.width * (effect.x / 100) - width / 2)),
+      ),
+      y: Math.min(
+        canvas.height - height,
+        Math.max(0, Math.round(canvas.height * (effect.y / 100) - height / 2)),
+      ),
+    };
+  });
+  const position = interpolateTrackingPosition(positioned, state.playhead);
+  return { x: position.x, y: position.y, width, height };
+}
+
+function applyBlurRegionStyle(element, region, strength) {
+  const canvas = currentCanvas();
+  element.style.left = `${((region.x + region.width / 2) / canvas.width) * 100}%`;
+  element.style.top = `${((region.y + region.height / 2) / canvas.height) * 100}%`;
+  element.style.width = `${(region.width / canvas.width) * 100}%`;
+  element.style.height = `${(region.height / canvas.height) * 100}%`;
+  element.style.setProperty("--blur-preview", `${Math.max(1, strength / 2)}px`);
+}
+
 function applyBlurOverlayStyle(element, effect) {
   element.style.left = `${effect.x}%`;
   element.style.top = `${effect.y}%`;
   element.style.width = `${effect.width}%`;
   element.style.height = `${effect.height}%`;
   element.style.setProperty("--blur-preview", `${Math.max(1, effect.strength / 2)}px`);
+}
+
+function applyBlurExportSafeStyle(element, clip) {
+  const effect = Timeline.blurEffectAt(clip, state.playhead);
+  applyBlurRegionStyle(element, exportSafeBlurRegion(clip), effect.strength);
 }
 
 function beginBlurTransform(event, clipId) {
@@ -1705,6 +1831,14 @@ function renderComposition() {
 
     if (clip.type === "blur") {
       const effect = Timeline.blurEffectAt(clip, state.playhead);
+      if (blurHasTracking(clip)) {
+        const exportSafe = document.createElement("div");
+        exportSafe.className = "blur-export-safe";
+        exportSafe.dataset.clipId = clip.id;
+        exportSafe.style.zIndex = String(zIndex + 99);
+        applyBlurExportSafeStyle(exportSafe, clip);
+        elements.overlayStage.append(exportSafe);
+      }
       const blur = document.createElement("div");
       blur.className = "blur-overlay";
       blur.classList.toggle("tracking", blurHasTracking(clip));
@@ -1855,6 +1989,11 @@ function syncCompositionDuringPlayback() {
 }
 
 function updateActiveBlurOverlays() {
+  for (const overlay of elements.overlayStage.querySelectorAll(".blur-export-safe")) {
+    const clip = state.clips.find((candidate) => candidate.id === overlay.dataset.clipId);
+    if (!clip) continue;
+    applyBlurExportSafeStyle(overlay, clip);
+  }
   for (const overlay of elements.overlayStage.querySelectorAll(".blur-overlay")) {
     const clip = state.clips.find((candidate) => candidate.id === overlay.dataset.clipId);
     if (!clip) continue;
@@ -1940,7 +2079,7 @@ function syncBlurDialogFromClip() {
   elements.blurHeight.value = String(Math.round(effect.height));
   elements.blurKeyframesStatus.textContent =
     count > 0
-      ? `${count} tracking keyframe${count === 1 ? "" : "s"}`
+      ? `${count} tracking keyframe${count === 1 ? "" : "s"} • export-safe preview`
       : "Static blur";
   elements.clearBlurKeyframes.disabled = count === 0;
 }
