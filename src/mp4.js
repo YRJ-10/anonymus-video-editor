@@ -141,6 +141,191 @@ function requireCount(issues, boxes, parent, type, minimum, maximum = minimum) {
   }
 }
 
+function requireBytes(buffer, offset, length, label) {
+  if (offset < 0 || length < 0 || offset + length > buffer.length) {
+    throw new Error(`${label} points outside the file`);
+  }
+}
+
+function readVariableUInt(buffer, offset, byteLength) {
+  let value = 0;
+  for (let index = 0; index < byteLength; index += 1) {
+    value = (value * 256) + buffer[offset + index];
+  }
+  return value;
+}
+
+function readSampleSizes(buffer, stsz) {
+  const start = stsz.payloadOffset;
+  const end = stsz.offset + stsz.size;
+  requireBytes(buffer, start, 12, stsz.path);
+  if (start + 12 > end) throw new Error(`${stsz.path} is too small`);
+
+  const sampleSize = buffer.readUInt32BE(start + 4);
+  const sampleCount = buffer.readUInt32BE(start + 8);
+  if (sampleCount > 1_000_000) {
+    throw new Error(`${stsz.path} declares too many samples`);
+  }
+  if (sampleSize !== 0) return Array(sampleCount).fill(sampleSize);
+
+  const entriesStart = start + 12;
+  requireBytes(buffer, entriesStart, sampleCount * 4, stsz.path);
+  if (entriesStart + sampleCount * 4 > end) {
+    throw new Error(`${stsz.path} sample table is truncated`);
+  }
+
+  const sizes = [];
+  for (let index = 0; index < sampleCount; index += 1) {
+    sizes.push(buffer.readUInt32BE(entriesStart + index * 4));
+  }
+  return sizes;
+}
+
+function readChunkOffsets(buffer, chunkOffsetBox) {
+  const start = chunkOffsetBox.payloadOffset;
+  const end = chunkOffsetBox.offset + chunkOffsetBox.size;
+  requireBytes(buffer, start, 8, chunkOffsetBox.path);
+  if (start + 8 > end) throw new Error(`${chunkOffsetBox.path} is too small`);
+
+  const entryCount = buffer.readUInt32BE(start + 4);
+  const entrySize = chunkOffsetBox.type === "co64" ? 8 : 4;
+  const entriesStart = start + 8;
+  requireBytes(buffer, entriesStart, entryCount * entrySize, chunkOffsetBox.path);
+  if (entriesStart + entryCount * entrySize > end) {
+    throw new Error(`${chunkOffsetBox.path} offset table is truncated`);
+  }
+
+  const offsets = [];
+  for (let index = 0; index < entryCount; index += 1) {
+    const offset = entriesStart + index * entrySize;
+    offsets.push(
+      entrySize === 8
+        ? Number(buffer.readBigUInt64BE(offset))
+        : buffer.readUInt32BE(offset),
+    );
+  }
+  return offsets;
+}
+
+function readSampleToChunk(buffer, stsc) {
+  const start = stsc.payloadOffset;
+  const end = stsc.offset + stsc.size;
+  requireBytes(buffer, start, 8, stsc.path);
+  if (start + 8 > end) throw new Error(`${stsc.path} is too small`);
+
+  const entryCount = buffer.readUInt32BE(start + 4);
+  const entriesStart = start + 8;
+  requireBytes(buffer, entriesStart, entryCount * 12, stsc.path);
+  if (entriesStart + entryCount * 12 > end) {
+    throw new Error(`${stsc.path} sample-to-chunk table is truncated`);
+  }
+
+  const entries = [];
+  for (let index = 0; index < entryCount; index += 1) {
+    const offset = entriesStart + index * 12;
+    entries.push({
+      firstChunk: buffer.readUInt32BE(offset),
+      samplesPerChunk: buffer.readUInt32BE(offset + 4),
+      sampleDescriptionIndex: buffer.readUInt32BE(offset + 8),
+    });
+  }
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (entry.firstChunk < 1 || entry.samplesPerChunk < 1) {
+      throw new Error(`${stsc.path} contains an invalid sample-to-chunk entry`);
+    }
+    if (index > 0 && entry.firstChunk <= entries[index - 1].firstChunk) {
+      throw new Error(`${stsc.path} sample-to-chunk entries are not ordered`);
+    }
+  }
+  return entries;
+}
+
+function readAvcNalLengthSize(buffer, boxes, avc1) {
+  const avcC = directChildren(boxes, avc1).find((box) => box.type === "avcC");
+  if (!avcC) throw new Error(`${avc1.path} is missing avcC`);
+  requireBytes(buffer, avcC.payloadOffset, 5, avcC.path);
+  return (buffer[avcC.payloadOffset + 4] & 0x03) + 1;
+}
+
+function sampleEntryForTrack(boxes, track) {
+  const mdia = directChildren(boxes, track).find((box) => box.type === "mdia");
+  const minf = directChildren(boxes, mdia).find((box) => box.type === "minf");
+  const stbl = directChildren(boxes, minf).find((box) => box.type === "stbl");
+  const stsd = directChildren(boxes, stbl).find((box) => box.type === "stsd");
+  const sampleEntry = directChildren(boxes, stsd).find((box) =>
+    ["avc1", "mp4a"].includes(box.type),
+  );
+  return { mdia, minf, stbl, stsd, sampleEntry };
+}
+
+function readMp4TrackSamples(mp4) {
+  const { boxes, buffer } = mp4;
+  const moov = directChildren(boxes).find((box) => box.type === "moov");
+  const tracks = directChildren(boxes, moov).filter((box) => box.type === "trak");
+
+  return tracks.map((track) => {
+    const { stbl, sampleEntry } = sampleEntryForTrack(boxes, track);
+    if (!stbl || !sampleEntry) throw new Error(`${track.path} is missing a sample entry`);
+    const stsz = directChildren(boxes, stbl).find((box) => box.type === "stsz");
+    const stsc = directChildren(boxes, stbl).find((box) => box.type === "stsc");
+    const chunkOffsetBox = directChildren(boxes, stbl).find((box) =>
+      ["stco", "co64"].includes(box.type),
+    );
+    if (!stsz || !stsc || !chunkOffsetBox) {
+      throw new Error(`${track.path} is missing required sample tables`);
+    }
+
+    const sampleSizes = readSampleSizes(buffer, stsz);
+    const chunkOffsets = readChunkOffsets(buffer, chunkOffsetBox);
+    const sampleToChunk = readSampleToChunk(buffer, stsc);
+    const samples = [];
+    let sampleIndex = 0;
+    let stscIndex = 0;
+
+    for (let chunkIndex = 1; chunkIndex <= chunkOffsets.length; chunkIndex += 1) {
+      if (
+        stscIndex + 1 < sampleToChunk.length &&
+        chunkIndex >= sampleToChunk[stscIndex + 1].firstChunk
+      ) {
+        stscIndex += 1;
+      }
+      let sampleOffset = chunkOffsets[chunkIndex - 1];
+      const { samplesPerChunk } = sampleToChunk[stscIndex];
+      for (let index = 0; index < samplesPerChunk && sampleIndex < sampleSizes.length; index += 1) {
+        const size = sampleSizes[sampleIndex];
+        samples.push({
+          index: sampleIndex,
+          chunkIndex,
+          offset: sampleOffset,
+          size,
+        });
+        sampleOffset += size;
+        sampleIndex += 1;
+      }
+    }
+
+    if (sampleIndex !== sampleSizes.length) {
+      throw new Error(`${track.path} sample tables do not account for every sample`);
+    }
+
+    return {
+      track,
+      type: sampleEntry.type,
+      sampleEntry,
+      stbl,
+      stsz,
+      stsc,
+      chunkOffsetBox,
+      chunkOffsets,
+      samples,
+      nalLengthSize: sampleEntry.type === "avc1"
+        ? readAvcNalLengthSize(buffer, boxes, sampleEntry)
+        : null,
+    };
+  });
+}
+
 function validateMp4Structure(mp4) {
   const issues = [];
   const { boxes, buffer } = mp4;
@@ -253,6 +438,112 @@ function validateMp4Structure(mp4) {
   return issues;
 }
 
+function validateAvcTrackBitstream(issues, mp4, trackInfo) {
+  const allowedNalTypes = new Set([1, 5, 7, 8, 9]);
+  const { buffer } = mp4;
+  let nalCount = 0;
+
+  for (const sample of trackInfo.samples) {
+    if (sample.size <= 0) {
+      issues.push(`H.264 sample ${sample.index} is empty`);
+      continue;
+    }
+    let cursor = sample.offset;
+    const sampleEnd = sample.offset + sample.size;
+    while (cursor < sampleEnd) {
+      if (cursor + trackInfo.nalLengthSize > sampleEnd) {
+        issues.push(`H.264 sample ${sample.index} has a truncated NAL length`);
+        break;
+      }
+      const nalSize = readVariableUInt(buffer, cursor, trackInfo.nalLengthSize);
+      cursor += trackInfo.nalLengthSize;
+      if (nalSize <= 0) {
+        issues.push(`H.264 sample ${sample.index} contains an empty NAL unit`);
+        break;
+      }
+      if (cursor + nalSize > sampleEnd) {
+        issues.push(`H.264 sample ${sample.index} has a NAL unit outside the sample`);
+        break;
+      }
+
+      const nalType = buffer[cursor] & 0x1f;
+      if (nalType === 6) {
+        issues.push(`H.264 bitstream contains forbidden SEI NAL unit in sample ${sample.index}`);
+      } else if (!allowedNalTypes.has(nalType)) {
+        issues.push(
+          `H.264 bitstream contains non-normalized NAL type ${nalType} in sample ${sample.index}`,
+        );
+      }
+      nalCount += 1;
+      cursor += nalSize;
+    }
+  }
+
+  if (nalCount === 0) issues.push("H.264 bitstream contains no NAL units");
+}
+
+function validateAacTrackBitstream(issues, mp4, trackInfo) {
+  const { buffer } = mp4;
+  for (const sample of trackInfo.samples) {
+    if (sample.size <= 0) {
+      issues.push(`AAC sample ${sample.index} is empty`);
+      continue;
+    }
+    if (
+      sample.size >= 2 &&
+      buffer[sample.offset] === 0xff &&
+      (buffer[sample.offset + 1] & 0xf0) === 0xf0 &&
+      (buffer[sample.offset + 1] & 0x06) === 0
+    ) {
+      issues.push(`AAC sample ${sample.index} contains an ADTS header`);
+    }
+    if (
+      sample.size >= 3 &&
+      buffer[sample.offset] === 0x49 &&
+      buffer[sample.offset + 1] === 0x44 &&
+      buffer[sample.offset + 2] === 0x33
+    ) {
+      issues.push(`AAC sample ${sample.index} contains an ID3 header`);
+    }
+  }
+}
+
+function validateMp4Bitstreams(mp4) {
+  const issues = [];
+  const { boxes, buffer } = mp4;
+  const mdat = directChildren(boxes).find((box) => box.type === "mdat");
+  let trackSamples;
+
+  try {
+    trackSamples = readMp4TrackSamples(mp4);
+  } catch (error) {
+    return [`MP4 sample table inspection failed: ${error.message}`];
+  }
+
+  for (const trackInfo of trackSamples) {
+    for (const sample of trackInfo.samples) {
+      if (
+        !mdat ||
+        sample.offset < mdat.payloadOffset ||
+        sample.offset + sample.size > mdat.offset + mdat.size
+      ) {
+        issues.push(`${trackInfo.track.path} sample ${sample.index} points outside mdat`);
+      }
+    }
+
+    if (trackInfo.type === "avc1") {
+      validateAvcTrackBitstream(issues, mp4, trackInfo);
+    } else if (trackInfo.type === "mp4a") {
+      validateAacTrackBitstream(issues, mp4, trackInfo);
+    } else {
+      issues.push(`${trackInfo.track.path} has unsupported bitstream type ${trackInfo.type}`);
+    }
+  }
+
+  if (!buffer.length) issues.push("MP4 file is empty");
+  return issues;
+}
+
 function readMediaHeaderTimes(buffer, box) {
   const start = box.payloadOffset;
   if (start + 12 > box.offset + box.size) return null;
@@ -320,6 +611,8 @@ function removeMoovMetadataBoxes(filePath) {
 module.exports = {
   inspectMp4,
   parseBoxes,
+  readMp4TrackSamples,
   removeMoovMetadataBoxes,
+  validateMp4Bitstreams,
   validateMp4Structure,
 };
