@@ -180,6 +180,19 @@ function trackKind(trackId) {
     : "video";
 }
 
+function trackNumber(trackId) {
+  const match = String(trackId || "").match(/\d+$/);
+  return match ? Number(match[0]) : 0;
+}
+
+function hasClipsOnTrack(trackId) {
+  return state.clips.some((clip) => clip.trackId === trackId);
+}
+
+function canDeleteTrack(track) {
+  return Boolean(track) && track.id !== "v1" && !hasClipsOnTrack(track.id);
+}
+
 function ensureAudioTrack() {
   let track = state.tracks.find((candidate) => trackKind(candidate.id) === "audio");
   if (track) return track;
@@ -1168,7 +1181,12 @@ function beginClipDrag(event, clipId, mode) {
 
 function addTrack(recordHistory = true) {
   const number =
-    state.tracks.filter((candidate) => trackKind(candidate.id) === "video").length + 1;
+    Math.max(
+      1,
+      ...state.tracks
+        .filter((candidate) => trackKind(candidate.id) === "video")
+        .map((candidate) => trackNumber(candidate.id)),
+    ) + 1;
   const track = { id: `v${number}`, name: `V${number}`, kind: "video" };
   state.tracks.push(track);
   state.activeTrackId = track.id;
@@ -1176,6 +1194,22 @@ function addTrack(recordHistory = true) {
   updateAddToTimelineButton();
   if (recordHistory) commitEdit();
   return track;
+}
+
+function deleteTrack(trackId) {
+  const track = state.tracks.find((candidate) => candidate.id === trackId);
+  if (!canDeleteTrack(track)) return;
+
+  state.tracks = state.tracks.filter((candidate) => candidate.id !== trackId);
+  if (state.activeTrackId === trackId) {
+    state.activeTrackId =
+      state.tracks.find((candidate) => trackKind(candidate.id) === "video")?.id ||
+      state.tracks[0]?.id ||
+      "v1";
+  }
+  renderTimeline();
+  updateAddToTimelineButton();
+  commitEdit();
 }
 
 function renderTrackStructure() {
@@ -1191,6 +1225,7 @@ function renderTrackStructure() {
     label.className = "track-label";
     label.classList.toggle("active", track.id === state.activeTrackId);
     label.dataset.trackId = track.id;
+    const emptyTrack = !hasClipsOnTrack(track.id);
     const name = document.createElement("strong");
     name.textContent = track.name;
     const type = document.createElement("span");
@@ -1201,6 +1236,18 @@ function renderTrackStructure() {
           ? "Base"
           : "Overlay";
     label.append(name, type);
+    if (canDeleteTrack(track)) {
+      const remove = document.createElement("button");
+      remove.className = "track-delete";
+      remove.type = "button";
+      remove.title = `Delete empty ${track.name}`;
+      remove.textContent = "×";
+      remove.addEventListener("click", (event) => {
+        event.stopPropagation();
+        deleteTrack(track.id);
+      });
+      label.append(remove);
+    }
     label.addEventListener("click", () => {
       state.activeTrackId = track.id;
       renderTimeline();
@@ -1222,7 +1269,7 @@ function renderTrackStructure() {
       renderTimeline();
     });
 
-    if (!state.clips.some((clip) => clip.trackId === track.id)) {
+    if (emptyTrack) {
       const empty = document.createElement("div");
       empty.className = "timeline-empty";
       empty.textContent =
