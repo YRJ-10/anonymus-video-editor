@@ -170,6 +170,7 @@
                   <button id="transform-fit" type="button" disabled>Fit</button>
                   <button id="transform-fill" type="button" disabled>Fill</button>
                   <button id="transform-crop" type="button" disabled>Crop</button>
+                  <button id="transform-color" type="button" disabled>Color</button>
                   <button id="transform-reset" type="button" disabled>Reset</button>
                 </div>
               </div>
@@ -380,6 +381,45 @@
           <button id="cancel-crop" type="button">Cancel</button>
           <button id="reset-crop" type="button">Reset</button>
           <button class="primary-button" type="submit">Apply crop</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="color-dialog" class="text-dialog color-dialog">
+      <form id="color-form" method="dialog">
+        <div class="dialog-heading">
+          <div>
+            <span class="eyebrow">CLIP COLOR</span>
+            <h2>Basic coloring</h2>
+          </div>
+          <button id="close-color-dialog" class="icon-button" type="button">×</button>
+        </div>
+        <div class="color-grid">
+          <label>
+            Brightness
+            <input id="color-brightness" type="range" min="-100" max="100" value="0" />
+            <span id="color-brightness-value">0</span>
+          </label>
+          <label>
+            Contrast
+            <input id="color-contrast" type="range" min="0" max="200" value="100" />
+            <span id="color-contrast-value">100%</span>
+          </label>
+          <label>
+            Saturation
+            <input id="color-saturation" type="range" min="0" max="200" value="100" />
+            <span id="color-saturation-value">100%</span>
+          </label>
+          <label>
+            Warmth
+            <input id="color-warmth" type="range" min="-100" max="100" value="0" />
+            <span id="color-warmth-value">0</span>
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button id="cancel-color" type="button">Cancel</button>
+          <button id="reset-color" type="button">Reset</button>
+          <button class="primary-button" type="submit">Apply color</button>
         </div>
       </form>
     </dialog>

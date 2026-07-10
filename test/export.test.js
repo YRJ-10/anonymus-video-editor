@@ -242,6 +242,49 @@ test("portrait export applies fill, resize, position, and crop at 1080x1920", as
   assert.equal(video.height, 1920);
 });
 
+test("export applies per-clip color adjustment before compositing", async () => {
+  const project = {
+    assets: [
+      {
+        path: sourceFile,
+        name: "SOURCE_SECRET_CAMERA.mp4",
+        type: "video",
+        duration: 1.2,
+      },
+    ],
+    tracks: [{ id: "v1", name: "V1" }],
+    clips: [
+      {
+        id: "color",
+        assetPath: sourceFile,
+        assetName: "SOURCE_SECRET_CAMERA.mp4",
+        type: "video",
+        trackId: "v1",
+        start: 0,
+        sourceIn: 0,
+        sourceOut: 0.6,
+        assetDuration: 1.2,
+        colorAdjustment: {
+          brightness: 20,
+          contrast: 120,
+          saturation: 80,
+          warmth: 25,
+        },
+      },
+    ],
+  };
+  const plan = await buildExportPlan(project, {
+    output: path.join(tempRoot, "color-render.mp4"),
+    supportDirectory: path.join(tempRoot, "color-support"),
+  });
+
+  assert.match(
+    plan.filterGraph,
+    /eq=brightness=0\.1:contrast=1\.2:saturation=0\.8/,
+  );
+  assert.match(plan.filterGraph, /colorbalance=rs=0\.1:rm=0\.1:rh=0\.1:/);
+});
+
 test("detached audio is mixed once with its independent volume", async () => {
   const project = {
     assets: [

@@ -172,3 +172,27 @@ test("media transforms use base and overlay defaults and normalize crop", () => 
   assert.equal(updated.transform.fitMode, "fill");
   assert.ok(updated.transform.crop.left + updated.transform.crop.right <= 0.95);
 });
+
+test("media color adjustments normalize per clip", () => {
+  const clip = Timeline.createClip({ id: "clip", asset: videoAsset, trackId: "v1" });
+  assert.deepEqual(clip.colorAdjustment, {
+    brightness: 0,
+    contrast: 100,
+    saturation: 100,
+    warmth: 0,
+  });
+
+  const updated = Timeline.updateClipColorAdjustment([clip], "clip", {
+    brightness: 150,
+    contrast: -5,
+    saturation: 220,
+    warmth: -140,
+  })[0];
+
+  assert.deepEqual(updated.colorAdjustment, {
+    brightness: 100,
+    contrast: 0,
+    saturation: 200,
+    warmth: -100,
+  });
+});

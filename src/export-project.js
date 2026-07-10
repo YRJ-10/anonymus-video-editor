@@ -11,6 +11,7 @@ const {
   blurEffectAt,
   normalizeBlurEffect,
   normalizeBlurKeyframes,
+  normalizeColorAdjustment,
   normalizeTransform,
 } = require("../desktop/renderer/timeline-model");
 
@@ -60,6 +61,26 @@ function filterNumber(value) {
 function clipVolume(clip) {
   if (clip.muted) return 0;
   return Math.min(2, Math.max(0, Number(clip.volume ?? 1)));
+}
+
+function colorAdjustmentFilter(clip) {
+  const color = normalizeColorAdjustment(clip.colorAdjustment);
+  const brightness = filterNumber(color.brightness / 200);
+  const contrast = filterNumber(color.contrast / 100);
+  const saturation = filterNumber(color.saturation / 100);
+  const warmth = filterNumber(color.warmth / 250);
+  const filters = [
+    `eq=brightness=${brightness}:contrast=${contrast}:saturation=${saturation}`,
+  ];
+  if (Math.abs(color.warmth) > 0.001) {
+    filters.push(
+      `colorbalance=rs=${warmth}:rm=${warmth}:rh=${warmth}:` +
+        `bs=${filterNumber(-color.warmth / 250)}:` +
+        `bm=${filterNumber(-color.warmth / 250)}:` +
+        `bh=${filterNumber(-color.warmth / 250)}`,
+    );
+  }
+  return filters.join(",");
 }
 
 function escapeFilterPath(filePath) {
@@ -345,7 +366,7 @@ async function buildExportPlan(project, temporaryPaths) {
     filters.push(
       `[${inputIndex}:v:0]trim=duration=${filterNumber(clipLength)},` +
         `setpts=PTS-STARTPTS+${filterNumber(clip.start)}/TB,fps=30,` +
-        `${scaleAndFrame},${crop},setsar=1,format=rgba[${layer}]`,
+        `${scaleAndFrame},${crop},${colorAdjustmentFilter(clip)},setsar=1,format=rgba[${layer}]`,
     );
     filters.push(
       `[${currentVideo}][${layer}]overlay=` +

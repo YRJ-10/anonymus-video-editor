@@ -125,6 +125,50 @@ test("project files preserve detached audio tracks and volume", () => {
   assert.equal(parsed.pixelsPerSecond, 8);
 });
 
+test("project files preserve media color adjustment", () => {
+  const project = {
+    format: PROJECT_FORMAT,
+    version: PROJECT_VERSION,
+    assets: [
+      {
+        path: "D:\\Media\\clip.mp4",
+        name: "clip.mp4",
+        type: "video",
+        duration: 10,
+      },
+    ],
+    tracks: [{ id: "v1", name: "V1", kind: "video" }],
+    clips: [
+      {
+        id: "clip",
+        assetPath: "D:\\Media\\clip.mp4",
+        assetName: "clip.mp4",
+        type: "video",
+        trackId: "v1",
+        start: 0,
+        sourceIn: 0,
+        sourceOut: 5,
+        assetDuration: 10,
+        colorAdjustment: {
+          brightness: 18,
+          contrast: 115,
+          saturation: 82,
+          warmth: -22,
+        },
+      },
+    ],
+    activeTrackId: "v1",
+  };
+
+  const parsed = parseProject(serializeProject(project));
+  assert.deepEqual(parsed.clips[0].colorAdjustment, {
+    brightness: 18,
+    contrast: 115,
+    saturation: 82,
+    warmth: -22,
+  });
+});
+
 test("project files preserve manual blur clips without media assets", () => {
   const project = {
     format: PROJECT_FORMAT,

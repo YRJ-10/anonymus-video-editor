@@ -3,6 +3,7 @@
 const {
   normalizeBlurEffect,
   normalizeBlurKeyframes,
+  normalizeColorAdjustment,
   normalizeTransform,
 } = require("./renderer/timeline-model");
 
@@ -113,6 +114,7 @@ function normalizeProject(input) {
       );
     } else {
       normalized.transform = normalizeTransform(clip.transform, trackId);
+      normalized.colorAdjustment = normalizeColorAdjustment(clip.colorAdjustment);
       normalized.volume = Math.min(2, Math.max(0, finite(clip.volume, 1)));
       normalized.muted = Boolean(clip.muted);
       normalized.audioDetached = Boolean(clip.audioDetached);

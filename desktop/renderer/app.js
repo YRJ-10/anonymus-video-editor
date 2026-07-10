@@ -34,6 +34,7 @@ const elements = {
   transformFit: document.querySelector("#transform-fit"),
   transformFill: document.querySelector("#transform-fill"),
   transformCrop: document.querySelector("#transform-crop"),
+  transformColor: document.querySelector("#transform-color"),
   transformReset: document.querySelector("#transform-reset"),
   transformBox: document.querySelector("#transform-box"),
   cropDialog: document.querySelector("#crop-dialog"),
@@ -45,6 +46,19 @@ const elements = {
   closeCropDialog: document.querySelector("#close-crop-dialog"),
   cancelCrop: document.querySelector("#cancel-crop"),
   resetCrop: document.querySelector("#reset-crop"),
+  colorDialog: document.querySelector("#color-dialog"),
+  colorForm: document.querySelector("#color-form"),
+  colorBrightness: document.querySelector("#color-brightness"),
+  colorBrightnessValue: document.querySelector("#color-brightness-value"),
+  colorContrast: document.querySelector("#color-contrast"),
+  colorContrastValue: document.querySelector("#color-contrast-value"),
+  colorSaturation: document.querySelector("#color-saturation"),
+  colorSaturationValue: document.querySelector("#color-saturation-value"),
+  colorWarmth: document.querySelector("#color-warmth"),
+  colorWarmthValue: document.querySelector("#color-warmth-value"),
+  closeColorDialog: document.querySelector("#close-color-dialog"),
+  cancelColor: document.querySelector("#cancel-color"),
+  resetColor: document.querySelector("#reset-color"),
   addMedia: document.querySelector("#add-media"),
   addToTimeline: document.querySelector("#add-to-timeline"),
   addText: document.querySelector("#add-text"),
@@ -149,6 +163,7 @@ const state = {
   canvas: null,
   mediaTransformDrag: null,
   cropOriginal: null,
+  colorOriginal: null,
 };
 
 function activeMediaElement() {
@@ -332,6 +347,7 @@ function restoreEditingState(snapshot) {
   state.blurOriginal = null;
   state.blurAddedTrackId = null;
   state.blurDrag = null;
+  state.colorOriginal = null;
   elements.video.removeAttribute("src");
   elements.image.removeAttribute("src");
   elements.video.classList.remove("visible");
@@ -486,6 +502,7 @@ async function newProject() {
   state.blurOriginal = null;
   state.blurAddedTrackId = null;
   state.blurDrag = null;
+  state.colorOriginal = null;
   state.clipboard = null;
   state.exportInProgress = false;
   state.lastExportPath = null;
@@ -658,6 +675,20 @@ function mediaFramePercent(clip) {
   return { width: (100 * assetRatio) / canvasRatio, height: 100 };
 }
 
+function colorCssFilter(clip) {
+  const color = Timeline.normalizeColorAdjustment(clip?.colorAdjustment);
+  const brightness = Math.max(0, 100 + color.brightness);
+  const contrast = Math.max(0, color.contrast);
+  const saturation = Math.max(0, color.saturation);
+  const warmth = color.warmth / 100;
+  const sepia = Math.max(0, warmth) * 0.32;
+  const hue = warmth < 0 ? Math.abs(warmth) * 10 : -warmth * 8;
+  return (
+    `brightness(${brightness}%) contrast(${contrast}%) ` +
+    `saturate(${saturation}%) sepia(${sepia}) hue-rotate(${hue}deg)`
+  );
+}
+
 function applyMediaClipStyle(element, clip) {
   const transform = Timeline.normalizeTransform(clip.transform, clip.trackId);
   const frame = mediaFramePercent(clip);
@@ -674,6 +705,7 @@ function applyMediaClipStyle(element, clip) {
   element.style.clipPath =
     `inset(${transform.crop.top * 100}% ${transform.crop.right * 100}% ` +
     `${transform.crop.bottom * 100}% ${transform.crop.left * 100}%)`;
+  element.style.filter = colorCssFilter(clip);
 }
 
 function resetMediaClipStyle(element) {
@@ -689,6 +721,7 @@ function resetMediaClipStyle(element) {
     "objectFit",
     "transform",
     "clipPath",
+    "filter",
   ]) {
     element.style[property] = "";
   }
@@ -723,6 +756,7 @@ function updateTransformControls() {
     elements.transformFit,
     elements.transformFill,
     elements.transformCrop,
+    elements.transformColor,
     elements.transformReset,
   ]) {
     button.disabled = !enabled;
@@ -2381,6 +2415,72 @@ function applyCropDialog() {
   commitEdit();
 }
 
+function colorValues() {
+  return {
+    brightness: Number(elements.colorBrightness.value),
+    contrast: Number(elements.colorContrast.value),
+    saturation: Number(elements.colorSaturation.value),
+    warmth: Number(elements.colorWarmth.value),
+  };
+}
+
+function updateColorDialogLabels() {
+  elements.colorBrightnessValue.textContent = `${Number(elements.colorBrightness.value)}`;
+  elements.colorContrastValue.textContent = `${Number(elements.colorContrast.value)}%`;
+  elements.colorSaturationValue.textContent = `${Number(elements.colorSaturation.value)}%`;
+  elements.colorWarmthValue.textContent = `${Number(elements.colorWarmth.value)}`;
+}
+
+function previewColor() {
+  const clip = selectedMediaClip();
+  if (!clip) return;
+  updateColorDialogLabels();
+  state.clips = Timeline.updateClipColorAdjustment(state.clips, clip.id, colorValues());
+  renderComposition();
+}
+
+function openColorDialog() {
+  const clip = selectedMediaClip();
+  if (!clip) return;
+  const color = Timeline.normalizeColorAdjustment(clip.colorAdjustment);
+  state.colorOriginal = structuredClone(color);
+  elements.colorBrightness.value = String(color.brightness);
+  elements.colorContrast.value = String(color.contrast);
+  elements.colorSaturation.value = String(color.saturation);
+  elements.colorWarmth.value = String(color.warmth);
+  updateColorDialogLabels();
+  if (!elements.colorDialog.open) elements.colorDialog.show();
+}
+
+function cancelColorDialog() {
+  const clip = selectedMediaClip();
+  if (clip && state.colorOriginal) {
+    state.clips = Timeline.updateClipColorAdjustment(
+      state.clips,
+      clip.id,
+      state.colorOriginal,
+    );
+    renderComposition();
+  }
+  state.colorOriginal = null;
+  elements.colorDialog.close();
+}
+
+function resetColorDialog() {
+  elements.colorBrightness.value = "0";
+  elements.colorContrast.value = "100";
+  elements.colorSaturation.value = "100";
+  elements.colorWarmth.value = "0";
+  previewColor();
+}
+
+function applyColorDialog() {
+  previewColor();
+  state.colorOriginal = null;
+  elements.colorDialog.close();
+  commitEdit();
+}
+
 elements.addMedia.addEventListener("click", addMedia);
 elements.addToTimeline.addEventListener("click", addSelectedAssetToTimeline);
 elements.addTrack.addEventListener("click", addTrack);
@@ -2401,6 +2501,7 @@ elements.canvasPortrait.addEventListener("click", () => setCanvas("portrait"));
 elements.transformFit.addEventListener("click", () => applyTransformMode("fit"));
 elements.transformFill.addEventListener("click", () => applyTransformMode("fill"));
 elements.transformCrop.addEventListener("click", openCropDialog);
+elements.transformColor.addEventListener("click", openColorDialog);
 elements.transformReset.addEventListener("click", resetSelectedTransform);
 elements.transformBox.addEventListener("pointerdown", beginMediaTransform);
 for (const input of [
@@ -2421,6 +2522,25 @@ elements.resetCrop.addEventListener("click", resetCropDialog);
 elements.cropDialog.addEventListener("cancel", (event) => {
   event.preventDefault();
   cancelCropDialog();
+});
+for (const input of [
+  elements.colorBrightness,
+  elements.colorContrast,
+  elements.colorSaturation,
+  elements.colorWarmth,
+]) {
+  input.addEventListener("input", previewColor);
+}
+elements.colorForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  applyColorDialog();
+});
+elements.closeColorDialog.addEventListener("click", cancelColorDialog);
+elements.cancelColor.addEventListener("click", cancelColorDialog);
+elements.resetColor.addEventListener("click", resetColorDialog);
+elements.colorDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  cancelColorDialog();
 });
 elements.exportVideo.addEventListener("click", prepareExportDialog);
 elements.startExport.addEventListener("click", exportTimeline);

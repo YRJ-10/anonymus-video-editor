@@ -75,6 +75,15 @@
     };
   }
 
+  function normalizeColorAdjustment(adjustment) {
+    return {
+      brightness: roundTime(clampNumber(adjustment?.brightness ?? 0, -100, 100)),
+      contrast: roundTime(clampNumber(adjustment?.contrast ?? 100, 0, 200)),
+      saturation: roundTime(clampNumber(adjustment?.saturation ?? 100, 0, 200)),
+      warmth: roundTime(clampNumber(adjustment?.warmth ?? 0, -100, 100)),
+    };
+  }
+
   function createClip({ id, asset, start = 0, trackId = "v1" }) {
     if (!id) throw new Error("A clip id is required");
     if (!asset?.path || !asset?.name || !asset?.type) {
@@ -95,6 +104,7 @@
       sourceOut: roundTime(duration),
       assetDuration: roundTime(duration),
       transform: normalizeTransform(null, trackId),
+      colorAdjustment: normalizeColorAdjustment(null),
     };
   }
 
@@ -401,6 +411,19 @@
     });
   }
 
+  function updateClipColorAdjustment(clips, clipId, changes) {
+    return updateClip(clips, clipId, (clip) => {
+      if (["text", "blur", "audio"].includes(clip.type)) return clip;
+      return {
+        ...clip,
+        colorAdjustment: normalizeColorAdjustment({
+          ...normalizeColorAdjustment(clip.colorAdjustment),
+          ...changes,
+        }),
+      };
+    });
+  }
+
   function updateBlurClip(clips, clipId, changes) {
     return updateClip(clips, clipId, (clip) => {
       if (clip.type !== "blur") return clip;
@@ -512,6 +535,7 @@
     findClipAt,
     findClipsAt,
     moveClip,
+    normalizeColorAdjustment,
     normalizeTransform,
     normalizeBlurEffect,
     normalizeBlurKeyframes,
@@ -523,6 +547,7 @@
     trimClipLeft,
     trimClipRight,
     updateClipTransform,
+    updateClipColorAdjustment,
     updateAudioClip,
     updateBlurClipAtTime,
     updateBlurClip,
