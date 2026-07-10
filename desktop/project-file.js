@@ -1,6 +1,6 @@
 "use strict";
 
-const { normalizeTransform } = require("./renderer/timeline-model");
+const { normalizeBlurEffect, normalizeTransform } = require("./renderer/timeline-model");
 
 const PROJECT_FORMAT = "anon-editor-project";
 const PROJECT_VERSION = 1;
@@ -65,18 +65,18 @@ function normalizeProject(input) {
     const type = clip?.type;
     const trackId = cleanString(clip?.trackId, 64);
     if (!id || clipIds.has(id)) throw new Error("Clip ids must be unique");
-    if (!["video", "image", "text", "audio"].includes(type)) {
+    if (!["video", "image", "text", "audio", "blur"].includes(type)) {
       throw new Error("Unsupported clip type");
     }
     if (!trackIds.has(trackId)) throw new Error("Clip references an unknown track");
-    if (type !== "text" && !assetPaths.has(clip.assetPath)) {
+    if (!["text", "blur"].includes(type) && !assetPaths.has(clip.assetPath)) {
       throw new Error("Clip references an unknown asset");
     }
     clipIds.add(id);
 
     const normalized = {
       id,
-      assetPath: type === "text" ? null : cleanString(clip.assetPath),
+      assetPath: ["text", "blur"].includes(type) ? null : cleanString(clip.assetPath),
       assetName: cleanString(clip.assetName, 512),
       type,
       trackId,
@@ -99,6 +99,9 @@ function normalizeProject(input) {
     } else if (type === "audio") {
       normalized.volume = Math.min(2, Math.max(0, finite(clip.volume, 1)));
       normalized.muted = Boolean(clip.muted);
+    } else if (type === "blur") {
+      normalized.assetName = cleanString(clip.assetName, 512) || "Blur / Sensor";
+      normalized.effect = normalizeBlurEffect(clip.effect);
     } else {
       normalized.transform = normalizeTransform(clip.transform, trackId);
       normalized.volume = Math.min(2, Math.max(0, finite(clip.volume, 1)));

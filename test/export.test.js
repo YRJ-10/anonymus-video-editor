@@ -92,6 +92,7 @@ test("project export composites tracks and text, then passes strict privacy veri
       { id: "v1", name: "V1" },
       { id: "v2", name: "V2" },
       { id: "v3", name: "V3" },
+      { id: "v4", name: "V4" },
     ],
     clips: [
       {
@@ -131,6 +132,24 @@ test("project export composites tracks and text, then passes strict privacy veri
         color: "#ffffff",
         x: 50,
         y: 50,
+      },
+      {
+        id: "blur",
+        assetPath: null,
+        assetName: "Blur / Sensor",
+        type: "blur",
+        trackId: "v4",
+        start: 0.15,
+        sourceIn: 0,
+        sourceOut: 0.75,
+        assetDuration: 0.6,
+        effect: {
+          x: 50,
+          y: 50,
+          width: 22,
+          height: 18,
+          strength: 18,
+        },
       },
     ],
   };

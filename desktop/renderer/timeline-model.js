@@ -124,6 +124,40 @@
     };
   }
 
+  function normalizeBlurEffect(effect) {
+    return {
+      x: roundTime(clampNumber(effect?.x ?? 50, 0, 100)),
+      y: roundTime(clampNumber(effect?.y ?? 50, 0, 100)),
+      width: roundTime(clampNumber(effect?.width ?? 24, 2, 100)),
+      height: roundTime(clampNumber(effect?.height ?? 16, 2, 100)),
+      strength: Math.round(clampNumber(effect?.strength ?? 18, 1, 60)),
+    };
+  }
+
+  function createBlurClip({
+    id,
+    trackId = "v2",
+    start = 0,
+    duration = 5,
+    effect = null,
+  }) {
+    if (!id) throw new Error("A blur clip id is required");
+    const normalizedDuration = Math.max(MIN_CLIP_DURATION, finiteNumber(duration, 5));
+
+    return {
+      id,
+      assetPath: null,
+      assetName: "Blur / Sensor",
+      type: "blur",
+      trackId,
+      start: roundTime(Math.max(0, finiteNumber(start))),
+      sourceIn: 0,
+      sourceOut: roundTime(normalizedDuration),
+      assetDuration: roundTime(normalizedDuration),
+      effect: normalizeBlurEffect(effect),
+    };
+  }
+
   function createAudioClip({ id, videoClip, trackId = "a1" }) {
     if (!id) throw new Error("An audio clip id is required");
     if (!videoClip || videoClip.type !== "video") {
@@ -284,7 +318,7 @@
 
   function updateClipTransform(clips, clipId, changes) {
     return updateClip(clips, clipId, (clip) => {
-      if (clip.type === "text") return clip;
+      if (["text", "blur", "audio"].includes(clip.type)) return clip;
       const current = normalizeTransform(clip.transform, clip.trackId);
       return {
         ...clip,
@@ -298,6 +332,31 @@
         ),
       };
     });
+  }
+
+  function updateBlurClip(clips, clipId, changes) {
+    return updateClip(clips, clipId, (clip) => {
+      if (clip.type !== "blur") return clip;
+      const duration =
+        changes.duration === undefined
+          ? clipDuration(clip)
+          : Math.max(MIN_CLIP_DURATION, finiteNumber(Number(changes.duration), 5));
+      return {
+        ...clip,
+        assetName: cleanBlurName(changes.assetName ?? clip.assetName),
+        effect: normalizeBlurEffect({
+          ...normalizeBlurEffect(clip.effect),
+          ...(changes.effect || changes),
+        }),
+        sourceOut: roundTime(clip.sourceIn + duration),
+        assetDuration: roundTime(clip.sourceIn + duration),
+      };
+    });
+  }
+
+  function cleanBlurName(value) {
+    const normalized = String(value || "").trim();
+    return normalized || "Blur / Sensor";
   }
 
   function updateAudioClip(clips, clipId, changes) {
@@ -320,6 +379,7 @@
     clipDuration,
     clipEnd,
     createAudioClip,
+    createBlurClip,
     createClip,
     createTextClip,
     deleteClip,
@@ -327,6 +387,7 @@
     findClipsAt,
     moveClip,
     normalizeTransform,
+    normalizeBlurEffect,
     snapTime,
     splitClip,
     timelineEnd,
@@ -335,6 +396,7 @@
     trimClipRight,
     updateClipTransform,
     updateAudioClip,
+    updateBlurClip,
     updateTextClip,
   });
 });

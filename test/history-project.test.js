@@ -124,3 +124,39 @@ test("project files preserve detached audio tracks and volume", () => {
   assert.equal(parsed.assets[0].hasAudio, true);
   assert.equal(parsed.pixelsPerSecond, 8);
 });
+
+test("project files preserve manual blur clips without media assets", () => {
+  const project = {
+    format: PROJECT_FORMAT,
+    version: PROJECT_VERSION,
+    assets: [],
+    tracks: [{ id: "v1", name: "V1", kind: "video" }],
+    clips: [
+      {
+        id: "blur",
+        assetPath: null,
+        assetName: "Sensor",
+        type: "blur",
+        trackId: "v1",
+        start: 0,
+        sourceIn: 0,
+        sourceOut: 5,
+        assetDuration: 5,
+        effect: {
+          x: 25,
+          y: 75,
+          width: 40,
+          height: 20,
+          strength: 24,
+        },
+      },
+    ],
+    activeTrackId: "v1",
+  };
+
+  const parsed = parseProject(serializeProject(project));
+  assert.equal(parsed.clips[0].type, "blur");
+  assert.equal(parsed.clips[0].assetPath, null);
+  assert.equal(parsed.clips[0].effect.strength, 24);
+  assert.equal(parsed.clips[0].effect.width, 40);
+});

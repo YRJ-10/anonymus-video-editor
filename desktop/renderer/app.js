@@ -48,6 +48,8 @@ const elements = {
   addToTimeline: document.querySelector("#add-to-timeline"),
   addText: document.querySelector("#add-text"),
   editText: document.querySelector("#edit-text"),
+  addBlur: document.querySelector("#add-blur"),
+  editBlur: document.querySelector("#edit-blur"),
   addTrack: document.querySelector("#add-track"),
   assetCount: document.querySelector("#asset-count"),
   assetList: document.querySelector("#asset-list"),
@@ -94,6 +96,17 @@ const elements = {
   textColor: document.querySelector("#text-color"),
   closeTextDialog: document.querySelector("#close-text-dialog"),
   cancelText: document.querySelector("#cancel-text"),
+  blurDialog: document.querySelector("#blur-dialog"),
+  blurForm: document.querySelector("#blur-form"),
+  blurDialogTitle: document.querySelector("#blur-dialog-title"),
+  blurDuration: document.querySelector("#blur-duration"),
+  blurStrength: document.querySelector("#blur-strength"),
+  blurStrengthValue: document.querySelector("#blur-strength-value"),
+  blurWidth: document.querySelector("#blur-width"),
+  blurHeight: document.querySelector("#blur-height"),
+  closeBlurDialog: document.querySelector("#close-blur-dialog"),
+  cancelBlur: document.querySelector("#cancel-blur"),
+  resetBlur: document.querySelector("#reset-blur"),
 };
 
 const state = {
@@ -121,6 +134,10 @@ const state = {
   compositionSignature: "",
   textDialogMode: "add",
   textDrag: null,
+  blurDialogMode: "add",
+  blurOriginal: null,
+  blurAddedTrackId: null,
+  blurDrag: null,
   history: null,
   clipboard: null,
   statusTimer: null,
@@ -296,6 +313,9 @@ function restoreEditingState(snapshot) {
   state.baseClipId = null;
   state.compositionSignature = "";
   state.pendingVideoSeek = null;
+  state.blurOriginal = null;
+  state.blurAddedTrackId = null;
+  state.blurDrag = null;
   elements.video.removeAttribute("src");
   elements.image.removeAttribute("src");
   elements.video.classList.remove("visible");
@@ -447,6 +467,9 @@ async function newProject() {
   state.timelinePreview = false;
   state.baseClipId = null;
   state.compositionSignature = "";
+  state.blurOriginal = null;
+  state.blurAddedTrackId = null;
+  state.blurDrag = null;
   state.clipboard = null;
   state.exportInProgress = false;
   state.lastExportPath = null;
@@ -558,7 +581,7 @@ function copySelectedClip() {
 function pasteClipboardClip() {
   if (!state.clipboard) return;
   if (
-    state.clipboard.type !== "text" &&
+    !["text", "blur"].includes(state.clipboard.type) &&
     !state.assets.some((asset) => asset.path === state.clipboard.assetPath)
   ) {
     showStatus("The copied clip's media is not available", true);
@@ -658,6 +681,11 @@ function resetMediaClipStyle(element) {
 function selectedMediaClip() {
   const clip = selectedClip();
   return clip && ["video", "image"].includes(clip.type) ? clip : null;
+}
+
+function selectedBlurClip() {
+  const clip = selectedClip();
+  return clip?.type === "blur" ? clip : null;
 }
 
 function updateTransformControls() {
@@ -1074,6 +1102,7 @@ function updateTimelineControls() {
   elements.splitClip.disabled = !canSplit;
   elements.deleteClip.disabled = !clip && !selectedAsset();
   elements.editText.disabled = clip?.type !== "text";
+  elements.editBlur.disabled = clip?.type !== "blur";
   elements.timelineTimecode.textContent = formatTimelineTime(state.playhead);
   updateAudioControls();
   updateAddToTimelineButton();
@@ -1241,6 +1270,12 @@ function renderClips() {
         event.stopPropagation();
         state.selectedClipId = clip.id;
         openTextDialog("edit");
+      });
+    } else if (clip.type === "blur") {
+      element.addEventListener("dblclick", (event) => {
+        event.stopPropagation();
+        state.selectedClipId = clip.id;
+        openBlurDialog("edit");
       });
     }
     lane.append(element);
@@ -1531,6 +1566,58 @@ function updateTextPosition(event) {
   renderComposition();
 }
 
+function beginBlurTransform(event, clipId) {
+  const clip = state.clips.find((candidate) => candidate.id === clipId);
+  if (!clip || clip.type !== "blur" || event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  state.selectedClipId = clipId;
+  state.activeTrackId = clip.trackId;
+  const effect = Timeline.normalizeBlurEffect(clip.effect);
+  state.blurDrag = {
+    clipId,
+    mode: event.target.dataset.handle ? "resize" : "move",
+    handle: event.target.dataset.handle || null,
+    startX: event.clientX,
+    startY: event.clientY,
+    effect,
+  };
+  renderTimeline();
+  renderComposition();
+}
+
+function updateBlurTransform(event) {
+  const drag = state.blurDrag;
+  if (!drag) return;
+  const rect = elements.compositionSurface.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+  const deltaX = ((event.clientX - drag.startX) / rect.width) * 100;
+  const deltaY = ((event.clientY - drag.startY) / rect.height) * 100;
+  const next = { ...drag.effect };
+
+  if (drag.mode === "move") {
+    next.x += deltaX;
+    next.y += deltaY;
+  } else {
+    const growsRight = drag.handle.includes("e") ? 1 : -1;
+    const growsDown = drag.handle.includes("s") ? 1 : -1;
+    next.width += deltaX * growsRight;
+    next.height += deltaY * growsDown;
+    next.x += deltaX / 2;
+    next.y += deltaY / 2;
+  }
+
+  state.clips = Timeline.updateBlurClip(state.clips, drag.clipId, { effect: next });
+  syncBlurDialogFromClip();
+  renderComposition();
+}
+
+function endBlurTransform() {
+  if (!state.blurDrag) return;
+  state.blurDrag = null;
+  commitEdit();
+}
+
 function renderComposition() {
   if (!state.timelinePreview) return;
 
@@ -1585,6 +1672,35 @@ function renderComposition() {
   for (const clip of activeClips) {
     const zIndex = trackOrder(clip.trackId) + 2;
 
+    if (clip.type === "blur") {
+      const effect = Timeline.normalizeBlurEffect(clip.effect);
+      const blur = document.createElement("div");
+      blur.className = "blur-overlay";
+      blur.classList.toggle("selected", clip.id === state.selectedClipId);
+      blur.dataset.clipId = clip.id;
+      blur.style.left = `${effect.x}%`;
+      blur.style.top = `${effect.y}%`;
+      blur.style.width = `${effect.width}%`;
+      blur.style.height = `${effect.height}%`;
+      blur.style.zIndex = String(zIndex + 100);
+      blur.style.setProperty("--blur-preview", `${Math.max(1, effect.strength / 2)}px`);
+      blur.title = "Drag to move. Drag a corner to resize.";
+      for (const handle of ["nw", "ne", "sw", "se"]) {
+        const grip = document.createElement("span");
+        grip.className = `blur-handle ${handle}`;
+        grip.dataset.handle = handle;
+        blur.append(grip);
+      }
+      blur.addEventListener("pointerdown", (event) => beginBlurTransform(event, clip.id));
+      blur.addEventListener("dblclick", (event) => {
+        event.stopPropagation();
+        state.selectedClipId = clip.id;
+        openBlurDialog("edit");
+      });
+      elements.overlayStage.append(blur);
+      continue;
+    }
+
     if (clip.type === "text") {
       const text = document.createElement("div");
       text.className = "text-overlay";
@@ -1596,7 +1712,7 @@ function renderComposition() {
       const previewHeight = elements.compositionSurface.clientHeight || 540;
       text.style.fontSize =
         `${Math.max(8, (clip.fontSize * previewHeight) / currentCanvas().height)}px`;
-      text.style.zIndex = String(zIndex);
+      text.style.zIndex = String(zIndex + 200);
       text.addEventListener("pointerdown", (event) =>
         beginTextPositionDrag(event, clip.id),
       );
@@ -1760,6 +1876,122 @@ function applyTextDialog() {
   elements.textDialog.close();
   renderTimeline();
   renderComposition();
+  commitEdit();
+}
+
+function blurValues() {
+  return {
+    duration: Number(elements.blurDuration.value),
+    effect: {
+      strength: Number(elements.blurStrength.value),
+      width: Number(elements.blurWidth.value),
+      height: Number(elements.blurHeight.value),
+    },
+  };
+}
+
+function syncBlurDialogFromClip() {
+  const clip = selectedBlurClip();
+  if (!clip || !elements.blurDialog.open) return;
+  const effect = Timeline.normalizeBlurEffect(clip.effect);
+  elements.blurDuration.value = String(Timeline.clipDuration(clip));
+  elements.blurStrength.value = String(effect.strength);
+  elements.blurStrengthValue.textContent = String(effect.strength);
+  elements.blurWidth.value = String(Math.round(effect.width));
+  elements.blurHeight.value = String(Math.round(effect.height));
+}
+
+function previewBlurDialog() {
+  const clip = selectedBlurClip();
+  if (!clip) return;
+  const values = blurValues();
+  state.clips = Timeline.updateBlurClip(state.clips, clip.id, values);
+  elements.blurStrengthValue.textContent = String(values.effect.strength);
+  renderTimeline();
+  renderComposition();
+}
+
+function openBlurDialog(mode) {
+  state.blurDialogMode = mode;
+  const clip = mode === "edit" ? selectedBlurClip() : null;
+  if (mode === "edit" && !clip) return;
+
+  if (mode === "add") {
+    const videoTrackCount =
+      state.tracks.filter((track) => trackKind(track.id) === "video").length;
+    state.blurAddedTrackId = null;
+    if (videoTrackCount === 1) {
+      const addedTrack = addTrack(false);
+      state.blurAddedTrackId = addedTrack.id;
+    }
+    const blurTrack = targetVideoTrack();
+    if (!blurTrack) return;
+    const blurClip = Timeline.createBlurClip({
+      id: crypto.randomUUID(),
+      trackId: blurTrack.id,
+      start: state.playhead,
+      duration: 5,
+    });
+    state.clips = [...state.clips, blurClip];
+    state.selectedClipId = blurClip.id;
+    state.activeTrackId = blurTrack.id;
+    state.timelinePreview = true;
+    state.blurOriginal = null;
+  } else {
+    state.blurOriginal = structuredClone(clip);
+    state.blurAddedTrackId = null;
+  }
+
+  const selected = selectedBlurClip();
+  elements.blurDialogTitle.textContent = mode === "edit" ? "Edit blur" : "Add blur";
+  elements.blurDuration.value = String(selected ? Timeline.clipDuration(selected) : 5);
+  const effect = Timeline.normalizeBlurEffect(selected?.effect);
+  elements.blurStrength.value = String(effect.strength);
+  elements.blurStrengthValue.textContent = String(effect.strength);
+  elements.blurWidth.value = String(Math.round(effect.width));
+  elements.blurHeight.value = String(Math.round(effect.height));
+  renderTimeline();
+  renderComposition();
+  if (!elements.blurDialog.open) elements.blurDialog.show();
+}
+
+function cancelBlurDialog() {
+  const clip = selectedBlurClip();
+  if (state.blurDialogMode === "add" && clip) {
+    state.clips = Timeline.deleteClip(state.clips, clip.id);
+    state.selectedClipId = null;
+    if (
+      state.blurAddedTrackId &&
+      !state.clips.some((candidate) => candidate.trackId === state.blurAddedTrackId)
+    ) {
+      state.tracks = state.tracks.filter((track) => track.id !== state.blurAddedTrackId);
+      state.activeTrackId = state.tracks.find((track) => trackKind(track.id) === "video")?.id || "v1";
+    }
+  } else if (clip && state.blurOriginal) {
+    state.clips = state.clips.map((candidate) =>
+      candidate.id === clip.id ? structuredClone(state.blurOriginal) : candidate,
+    );
+  }
+  state.blurOriginal = null;
+  state.blurAddedTrackId = null;
+  elements.blurDialog.close();
+  renderTimeline();
+  renderComposition();
+}
+
+function resetBlurDialog() {
+  elements.blurStrength.value = "18";
+  elements.blurStrengthValue.textContent = "18";
+  elements.blurWidth.value = "24";
+  elements.blurHeight.value = "16";
+  previewBlurDialog();
+}
+
+function applyBlurDialog() {
+  previewBlurDialog();
+  state.blurOriginal = null;
+  state.blurAddedTrackId = null;
+  elements.blurDialog.close();
   commitEdit();
 }
 
@@ -1950,6 +2182,27 @@ elements.textForm.addEventListener("submit", (event) => {
   event.preventDefault();
   applyTextDialog();
 });
+elements.addBlur.addEventListener("click", () => openBlurDialog("add"));
+elements.editBlur.addEventListener("click", () => openBlurDialog("edit"));
+for (const input of [
+  elements.blurDuration,
+  elements.blurStrength,
+  elements.blurWidth,
+  elements.blurHeight,
+]) {
+  input.addEventListener("input", previewBlurDialog);
+}
+elements.blurForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  applyBlurDialog();
+});
+elements.closeBlurDialog.addEventListener("click", cancelBlurDialog);
+elements.cancelBlur.addEventListener("click", cancelBlurDialog);
+elements.resetBlur.addEventListener("click", resetBlurDialog);
+elements.blurDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  cancelBlurDialog();
+});
 window.anonEditor.onPickRequested(addMedia);
 window.anonEditor.onNewProjectRequested(newProject);
 window.anonEditor.onOpenProjectRequested(openProject);
@@ -2139,11 +2392,13 @@ elements.playhead.addEventListener("pointerdown", (event) => {
 document.addEventListener("pointermove", (event) => {
   handleTimelinePointerMove(event);
   updateTextPosition(event);
+  updateBlurTransform(event);
   updateMediaTransform(event);
   resizeTimeline(event);
 });
 document.addEventListener("pointerup", () => {
   endTimelineDrag();
+  endBlurTransform();
   endMediaTransform();
   endTimelineResize();
   const movedText = Boolean(state.textDrag);
@@ -2152,6 +2407,7 @@ document.addEventListener("pointerup", () => {
 });
 document.addEventListener("pointercancel", () => {
   endTimelineDrag();
+  endBlurTransform();
   endMediaTransform();
   endTimelineResize();
   const movedText = Boolean(state.textDrag);

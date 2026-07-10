@@ -69,6 +69,41 @@ test("text annotations normalize style, position, and duration", () => {
   assert.equal(updated[0].y, 75);
 });
 
+test("blur clips normalize censor region, strength, and duration", () => {
+  const blur = Timeline.createBlurClip({
+    id: "blur",
+    trackId: "v2",
+    start: 1,
+    duration: 3,
+    effect: {
+      x: 140,
+      y: -20,
+      width: 1,
+      height: 120,
+      strength: 999,
+    },
+  });
+
+  assert.equal(blur.type, "blur");
+  assert.equal(blur.assetPath, null);
+  assert.equal(blur.effect.x, 100);
+  assert.equal(blur.effect.y, 0);
+  assert.equal(blur.effect.width, 2);
+  assert.equal(blur.effect.height, 100);
+  assert.equal(blur.effect.strength, 60);
+  assert.equal(Timeline.clipDuration(blur), 3);
+
+  const updated = Timeline.updateBlurClip([blur], "blur", {
+    duration: 2,
+    effect: { x: 25, y: 75, width: 30, strength: 12 },
+  });
+  assert.equal(updated[0].effect.x, 25);
+  assert.equal(updated[0].effect.y, 75);
+  assert.equal(updated[0].effect.width, 30);
+  assert.equal(updated[0].effect.strength, 12);
+  assert.equal(Timeline.clipDuration(updated[0]), 2);
+});
+
 test("all overlapping clips are returned for composition", () => {
   const base = Timeline.createClip({ id: "base", asset: videoAsset, trackId: "v1" });
   const overlay = Timeline.createClip({

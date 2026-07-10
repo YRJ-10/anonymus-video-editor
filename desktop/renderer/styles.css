@@ -593,6 +593,68 @@ button {
   background: rgba(0, 0, 0, 0.15);
 }
 
+.blur-overlay {
+  position: absolute;
+  border: 1px solid rgba(116, 235, 177, 0.9);
+  background: rgba(116, 235, 177, 0.08);
+  box-shadow:
+    inset 0 0 18px rgba(255, 255, 255, 0.12),
+    0 0 0 1px rgba(0, 0, 0, 0.48),
+    0 0 18px rgba(45, 220, 140, 0.16);
+  cursor: move;
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+  user-select: none;
+  -webkit-backdrop-filter: blur(var(--blur-preview, 18px));
+  backdrop-filter: blur(var(--blur-preview, 18px));
+}
+
+.blur-overlay.selected {
+  border-color: #9fffd0;
+  background: rgba(116, 235, 177, 0.13);
+}
+
+.blur-overlay::before {
+  position: absolute;
+  inset: 7px;
+  border: 1px dashed rgba(255, 255, 255, 0.35);
+  content: "";
+  pointer-events: none;
+}
+
+.blur-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 1px solid #16372a;
+  border-radius: 2px;
+  background: #9fffd0;
+}
+
+.blur-handle.nw {
+  top: -6px;
+  left: -6px;
+  cursor: nwse-resize;
+}
+
+.blur-handle.ne {
+  top: -6px;
+  right: -6px;
+  cursor: nesw-resize;
+}
+
+.blur-handle.sw {
+  bottom: -6px;
+  left: -6px;
+  cursor: nesw-resize;
+}
+
+.blur-handle.se {
+  right: -6px;
+  bottom: -6px;
+  cursor: nwse-resize;
+}
+
 .transform-box {
   position: absolute;
   z-index: 40;
@@ -1019,6 +1081,17 @@ kbd {
   color: #d8ffed;
 }
 
+.timeline-clip.blur {
+  border-color: #43a679;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 35%),
+    repeating-linear-gradient(45deg, #1f694c 0 6px, #24533f 6px 12px);
+}
+
+.timeline-clip.blur .clip-body strong {
+  color: #d8ffed;
+}
+
 .timeline-clip.selected {
   border-color: #9a8fff;
   box-shadow:
@@ -1165,7 +1238,8 @@ kbd {
 }
 
 .text-dialog textarea,
-.text-dialog input[type="number"] {
+.text-dialog input[type="number"],
+.text-dialog input[type="range"] {
   width: 100%;
   border: 1px solid #383a43;
   border-radius: 7px;
@@ -1254,6 +1328,60 @@ kbd {
 }
 
 .crop-dialog .dialog-actions button {
+  min-height: 31px;
+  padding: 0 10px;
+  font-size: 10px;
+}
+
+.blur-dialog {
+  position: fixed;
+  top: 92px;
+  right: 22px;
+  left: auto;
+  width: min(390px, calc(100vw - 44px));
+  margin: 0;
+  border-color: rgba(67, 166, 121, 0.5);
+  background: rgba(25, 26, 31, 0.96);
+  box-shadow:
+    0 18px 60px rgba(0, 0, 0, 0.52),
+    0 0 0 1px rgba(67, 166, 121, 0.12);
+}
+
+.blur-dialog::backdrop {
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.blur-dialog form {
+  gap: 13px;
+  padding: 16px;
+}
+
+.blur-dialog .dialog-heading h2 {
+  font-size: 15px;
+}
+
+.blur-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.blur-dialog input[type="range"] {
+  height: 8px;
+  padding: 0;
+  accent-color: #43d08d;
+}
+
+.range-value {
+  justify-self: end;
+  margin-top: -20px;
+  color: #9fffd0;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 10px;
+}
+
+.blur-dialog .dialog-actions button {
   min-height: 31px;
   padding: 0 10px;
   font-size: 10px;

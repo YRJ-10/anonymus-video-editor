@@ -151,6 +151,13 @@ function createWindow() {
               document.querySelector("#show-export-folder") &&
               document.querySelector("#open-export-file")
             ),
+            hasBlurUi: Boolean(
+              document.querySelector(".text-controls #add-blur") &&
+              document.querySelector(".text-controls #edit-blur") &&
+              document.querySelector("#blur-dialog") &&
+              typeof window.TimelineModel?.createBlurClip === "function" &&
+              typeof window.TimelineModel?.updateBlurClip === "function"
+            ),
           })
         `);
         const ready = Object.values(result).every(Boolean);

@@ -135,7 +135,9 @@
             <div class="audio-controls" aria-label="Selected clip audio">
               <div class="text-controls" aria-label="Text annotation">
                 <button id="add-text" type="button">＋ Text</button>
-                <button id="edit-text" type="button" disabled>Edit text</button>
+                  <button id="edit-text" type="button" disabled>Edit text</button>
+                  <button id="add-blur" type="button">+ Blur</button>
+                  <button id="edit-blur" type="button" disabled>Edit blur</button>
               </div>
               <button id="detach-audio" type="button" disabled>Detach audio</button>
               <button id="mute-audio" type="button" disabled>Mute</button>
@@ -274,6 +276,51 @@
         <div class="dialog-actions">
           <button id="cancel-text" type="button">Cancel</button>
           <button class="primary-button" type="submit">Apply text</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="blur-dialog" class="text-dialog blur-dialog">
+      <form id="blur-form" method="dialog">
+        <div class="dialog-heading">
+          <div>
+            <span class="eyebrow">SENSOR</span>
+            <h2 id="blur-dialog-title">Add blur</h2>
+          </div>
+          <button id="close-blur-dialog" class="icon-button" type="button" aria-label="Close">
+            Ã—
+          </button>
+        </div>
+
+        <div class="blur-field-row">
+          <label>
+            Duration
+            <input id="blur-duration" type="number" min="0.1" max="3600" step="0.1" value="5" />
+          </label>
+          <label>
+            Strength
+            <span id="blur-strength-value" class="range-value">18</span>
+            <input id="blur-strength" type="range" min="1" max="60" step="1" value="18" />
+          </label>
+        </div>
+
+        <div class="blur-field-row">
+          <label>
+            Width
+            <input id="blur-width" type="range" min="2" max="100" step="1" value="24" />
+          </label>
+          <label>
+            Height
+            <input id="blur-height" type="range" min="2" max="100" step="1" value="16" />
+          </label>
+        </div>
+
+        <p>Drag or resize the blur box directly in preview. Export renders it into the anonymous MP4.</p>
+
+        <div class="dialog-actions">
+          <button id="cancel-blur" type="button">Cancel</button>
+          <button id="reset-blur" type="button">Reset</button>
+          <button class="primary-button" type="submit">Apply blur</button>
         </div>
       </form>
     </dialog>
