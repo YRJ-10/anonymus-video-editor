@@ -110,6 +110,22 @@ test("independent raw verifier rejects UTF-16LE source paths hidden in media pay
   assert.ok(result.issues.some((issue) => /raw UTF-16LE text.*Windows user path/i.test(issue)));
 });
 
+test("independent raw verifier ignores short gps-looking compressed byte noise", () => {
+  const syntheticFile = path.join(tempRoot, "synthetic-gps-noise.bin");
+  fs.writeFileSync(syntheticFile, Buffer.from("$gps", "ascii"));
+
+  const issues = validateRawFileAnonymity(syntheticFile);
+  assert.deepEqual(issues, []);
+});
+
+test("independent raw verifier rejects contextual gps metadata keys", () => {
+  const syntheticFile = path.join(tempRoot, "synthetic-gps-key.bin");
+  fs.writeFileSync(syntheticFile, Buffer.from("gps=1.234,5.678 GPSLatitude", "ascii"));
+
+  const issues = validateRawFileAnonymity(syntheticFile);
+  assert.ok(issues.some((issue) => /forbidden metadata key/i.test(issue)));
+});
+
 test("independent raw verifier rejects forbidden MP4 box signatures by byte scan", () => {
   const syntheticFile = path.join(tempRoot, "synthetic-uuid.bin");
   const bytes = Buffer.alloc(16);

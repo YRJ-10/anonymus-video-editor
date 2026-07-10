@@ -3,6 +3,20 @@
 const fs = require("node:fs");
 
 const MAX_ISSUES_PER_PATTERN = 1;
+const FORBIDDEN_METADATA_KEY_PATTERN =
+  /\b(?:creation_time|encoded_by|encoder|artist|album|comment|copyright|description|title|location|gps(?:latitude|longitude)?|device[_ -]?model|camera[_ -]?model|software)\b/gi;
+const STRONG_STANDALONE_METADATA_KEYS = new Set([
+  "creation_time",
+  "encoded_by",
+  "gpslatitude",
+  "gpslongitude",
+  "device_model",
+  "device-model",
+  "device model",
+  "camera_model",
+  "camera-model",
+  "camera model",
+]);
 
 const FORBIDDEN_RAW_PATTERNS = Object.freeze([
   { label: "source-secret marker", pattern: /SOURCE_SECRET/i },
@@ -11,11 +25,6 @@ const FORBIDDEN_RAW_PATTERNS = Object.freeze([
   { label: "Lavf muxer signature", pattern: /\bLavf\d/i },
   { label: "x264 encoder signature", pattern: /\bx264\b/i },
   { label: "QuickTime metadata namespace", pattern: /\b(?:com\.apple\.quicktime|QuickTime|iTun\w*)\b/i },
-  {
-    label: "metadata key",
-    pattern:
-      /\b(?:creation_time|encoded_by|encoder|artist|album|comment|copyright|description|title|location|gps(?:latitude|longitude)?|device[_ -]?model|camera[_ -]?model|software)\b/i,
-  },
   { label: "Windows user path", pattern: /[A-Za-z]:\\(?:Users|Documents and Settings)\\/i },
   { label: "Unix user path", pattern: /\/(?:home|Users)\/[^/\s]+/i },
   { label: "URL", pattern: /\b(?:https?:\/\/|www\.)/i },
@@ -101,6 +110,46 @@ function findPotentialBoxHeaders(buffer, type) {
   return matches;
 }
 
+function nextNonWhitespace(text, index) {
+  for (let cursor = index; cursor < text.length; cursor += 1) {
+    if (!/\s/.test(text[cursor])) return text[cursor];
+  }
+  return "";
+}
+
+function previousNonWhitespace(text, index) {
+  for (let cursor = index; cursor >= 0; cursor -= 1) {
+    if (!/\s/.test(text[cursor])) return text[cursor];
+  }
+  return "";
+}
+
+function normalizeMetadataKey(key) {
+  return String(key || "").toLowerCase();
+}
+
+function hasMetadataKeyContext(text, match) {
+  const rawKey = match[0];
+  const key = normalizeMetadataKey(rawKey);
+  if (STRONG_STANDALONE_METADATA_KEYS.has(key)) return true;
+
+  const before = previousNonWhitespace(text, match.index - 1);
+  const after = nextNonWhitespace(text, match.index + rawKey.length);
+  if ([":", "="].includes(after)) return true;
+  if (["\"", "'", "{", "[", ",", ";"].includes(before) && [":", "="].includes(after)) {
+    return true;
+  }
+  return false;
+}
+
+function findForbiddenMetadataKey(text) {
+  FORBIDDEN_METADATA_KEY_PATTERN.lastIndex = 0;
+  for (const match of text.matchAll(FORBIDDEN_METADATA_KEY_PATTERN)) {
+    if (hasMetadataKeyContext(text, match)) return match[0];
+  }
+  return null;
+}
+
 function validateRawFileAnonymity(filePath) {
   const buffer = fs.readFileSync(filePath);
   const issues = [];
@@ -118,6 +167,17 @@ function validateRawFileAnonymity(filePath) {
     }
   }
 
+  let metadataIssueCount = 0;
+  for (const run of runs) {
+    const key = findForbiddenMetadataKey(run.text);
+    if (!key) continue;
+    issues.push(
+      `raw ${run.encoding} text contains forbidden metadata key ${JSON.stringify(key)} at byte ${run.offset}: ${JSON.stringify(clipped(run.text))}`,
+    );
+    metadataIssueCount += 1;
+    if (metadataIssueCount >= MAX_ISSUES_PER_PATTERN) break;
+  }
+
   for (const type of FORBIDDEN_RAW_BOX_TYPES) {
     for (const match of findPotentialBoxHeaders(buffer, type).slice(0, 1)) {
       issues.push(
@@ -132,5 +192,6 @@ function validateRawFileAnonymity(filePath) {
 module.exports = {
   extractAsciiRuns,
   extractUtf16LeRuns,
+  findForbiddenMetadataKey,
   validateRawFileAnonymity,
 };
