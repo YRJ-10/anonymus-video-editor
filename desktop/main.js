@@ -26,16 +26,24 @@ const {
 } = require("./project-file");
 const { exportProject } = require("../src/export-project");
 
+const smokeTest = process.argv.includes("--smoke-test");
+
 app.commandLine.appendSwitch("disable-background-networking");
 app.commandLine.appendSwitch("disable-component-update");
 app.commandLine.appendSwitch("disable-domain-reliability");
 app.commandLine.appendSwitch("disable-sync");
+if (smokeTest) {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch("disable-gpu");
+  const smokeUserData = path.join(process.cwd(), ".tmp-electron-smoke");
+  fs.mkdirSync(smokeUserData, { recursive: true });
+  app.setPath("userData", smokeUserData);
+}
 app.setName("Anon Editor");
 if (process.platform === "win32") app.setAppUserModelId("com.yrj.anoneditor");
 
 let mainWindow;
 let currentProjectPath = null;
-const smokeTest = process.argv.includes("--smoke-test");
 
 function extensionList(values) {
   return [...values].map((extension) => extension.slice(1));

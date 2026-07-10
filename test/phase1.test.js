@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
+const { inspectMp4 } = require("../src/mp4");
 const { runProcess } = require("../src/process");
 const { sanitizeFile } = require("../src/sanitize");
 const { verifyFile } = require("../src/verify");
@@ -141,4 +142,37 @@ test("verifier rejects metadata reinserted after sanitization", async () => {
   const result = await verifyFile(tamperedFile);
   assert.equal(result.ok, false);
   assert.ok(result.issues.some((issue) => /forbidden|SOURCE_SECRET/i.test(issue)));
+});
+
+test("verifier rejects an unknown box injected into moov", async () => {
+  const tamperedFile = path.join(tempRoot, "unknown-box.mp4");
+  const original = fs.readFileSync(cleanFile);
+  const moov = inspectMp4(cleanFile).boxes.find(
+    (box) => box.type === "moov" && box.parentOffset === null,
+  );
+  const injected = Buffer.alloc(8);
+  injected.writeUInt32BE(8, 0);
+  injected.write("junk", 4, "latin1");
+  const moovEnd = moov.offset + moov.size;
+  const tampered = Buffer.concat([
+    original.subarray(0, moovEnd),
+    injected,
+    original.subarray(moovEnd),
+  ]);
+  tampered.writeUInt32BE(moov.size + injected.length, moov.offset);
+  fs.writeFileSync(tamperedFile, tampered);
+
+  const result = await verifyFile(tamperedFile);
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => /not allowlisted.*moov\.junk/i.test(issue)));
+});
+
+test("verifier rejects even a short trailing payload", async () => {
+  const tamperedFile = path.join(tempRoot, "trailing-bytes.mp4");
+  fs.copyFileSync(cleanFile, tamperedFile);
+  fs.appendFileSync(tamperedFile, Buffer.from([0xde, 0xad, 0xbe, 0xef]));
+
+  const result = await verifyFile(tamperedFile);
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => /4 unparsed byte/i.test(issue)));
 });
