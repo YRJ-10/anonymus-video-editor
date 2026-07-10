@@ -976,6 +976,7 @@ kbd {
   display: grid;
   grid-template-columns: 65px minmax(0, 1fr);
   min-height: 0;
+  user-select: none;
 }
 
 .track-labels {
@@ -1076,6 +1077,7 @@ kbd {
   position: relative;
   min-width: 100%;
   min-height: 108px;
+  user-select: none;
 }
 
 .timeline-ruler {

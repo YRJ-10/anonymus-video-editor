@@ -1249,6 +1249,7 @@ function renderTrackStructure() {
       label.append(remove);
     }
     label.addEventListener("click", () => {
+      state.selectedClipId = null;
       state.activeTrackId = track.id;
       renderTimeline();
       updateAddToTimelineButton();
@@ -1262,6 +1263,8 @@ function renderTrackStructure() {
     lane.style.backgroundSize = `${state.pixelsPerSecond}px 100%`;
     lane.addEventListener("pointerdown", (event) => {
       if (event.target !== lane || event.button !== 0) return;
+      event.preventDefault();
+      state.selectedClipId = null;
       state.activeTrackId = track.id;
       state.timelinePreview = true;
       state.timelineDrag = { mode: "playhead" };
@@ -1376,6 +1379,16 @@ function selectClipAtTime(clip, timelineTime) {
   renderComposition();
 }
 
+function previewClipAtTime(clip, timelineTime) {
+  state.timelinePreview = true;
+  state.playhead = clamp(timelineTime, clip.start, Timeline.clipEnd(clip));
+  const asset = assetForClip(clip);
+  if (asset?.type === "video") {
+    state.pendingVideoSeek = clip.sourceIn + (state.playhead - clip.start);
+  }
+  renderComposition();
+}
+
 function setPlayhead(time, syncPreview = true) {
   const maximum = Math.max(Timeline.timelineEnd(state.clips), 0);
   state.playhead = clamp(time, 0, maximum);
@@ -1386,7 +1399,7 @@ function setPlayhead(time, syncPreview = true) {
     state.playhead < Timeline.clipEnd(selected);
   const clip = selectedIsActive ? selected : topClipAtPlayhead();
 
-  if (syncPreview && clip) selectClipAtTime(clip, state.playhead);
+  if (syncPreview && clip) previewClipAtTime(clip, state.playhead);
   else if (!clip) {
     state.selectedClipId = null;
     elements.video.pause();
@@ -1525,6 +1538,7 @@ function endTimelineResize() {
 function handleTimelinePointerMove(event) {
   const drag = state.timelineDrag;
   if (!drag) return;
+  event.preventDefault();
 
   if (drag.mode === "playhead") {
     setPlayhead(timelineTimeFromPointer(event));
@@ -2541,7 +2555,12 @@ async function togglePlayback() {
   else media.pause();
 }
 
-elements.play.addEventListener("click", togglePlayback);
+elements.play.addEventListener("click", () => {
+  state.selectedClipId = null;
+  renderTimeline();
+  renderComposition();
+  togglePlayback();
+});
 
 async function togglePreviewFullscreen() {
   try {
@@ -2630,6 +2649,8 @@ elements.viewport.addEventListener("pointercancel", endPreviewDrag);
 
 elements.timelineRuler.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
+  event.preventDefault();
+  state.selectedClipId = null;
   state.timelinePreview = true;
   state.timelineDrag = { mode: "playhead" };
   setPlayhead(timelineTimeFromPointer(event));
@@ -2639,8 +2660,10 @@ elements.playhead.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
   event.preventDefault();
   event.stopPropagation();
+  state.selectedClipId = null;
   state.timelinePreview = true;
   state.timelineDrag = { mode: "playhead" };
+  renderTimeline();
 });
 
 document.addEventListener("pointermove", (event) => {
@@ -2740,6 +2763,9 @@ document.addEventListener("keydown", (event) => {
     fitTimelineToArea();
   } else if (!command && event.code === "Space") {
     event.preventDefault();
+    state.selectedClipId = null;
+    renderTimeline();
+    renderComposition();
     togglePlayback();
   } else if (!command && event.key === "ArrowRight") {
     event.preventDefault();
