@@ -2,6 +2,8 @@
 
 const fs = require("node:fs");
 
+const MAX_MEDIA_COVERAGE_ISSUES = 8;
+
 const CONTAINER_BOXES = new Set([
   "moov",
   "trak",
@@ -508,6 +510,56 @@ function validateAacTrackBitstream(issues, mp4, trackInfo) {
   }
 }
 
+function pushCoverageIssue(issues, message) {
+  const existing = issues.filter((issue) => /mdat coverage|unreferenced mdat|overlaps/.test(issue));
+  if (existing.length < MAX_MEDIA_COVERAGE_ISSUES) issues.push(message);
+}
+
+function validateMdatSampleCoverage(issues, mdat, trackSamples) {
+  if (!mdat) {
+    issues.push("mdat box is missing");
+    return;
+  }
+
+  const ranges = [];
+  for (const trackInfo of trackSamples) {
+    for (const sample of trackInfo.samples) {
+      if (sample.size <= 0) continue;
+      const start = sample.offset;
+      const end = sample.offset + sample.size;
+      if (start >= mdat.payloadOffset && end <= mdat.offset + mdat.size) {
+        ranges.push({
+          start,
+          end,
+          label: `${trackInfo.track.path} sample ${sample.index}`,
+        });
+      }
+    }
+  }
+
+  ranges.sort((left, right) => left.start - right.start || left.end - right.end);
+  let cursor = mdat.payloadOffset;
+  for (const range of ranges) {
+    if (range.start < cursor) {
+      pushCoverageIssue(
+        issues,
+        `mdat coverage overlap: ${range.label} begins at byte ${range.start} before byte ${cursor}`,
+      );
+    } else if (range.start > cursor) {
+      pushCoverageIssue(
+        issues,
+        `unreferenced mdat bytes from byte ${cursor} to ${range.start - 1}`,
+      );
+    }
+    cursor = Math.max(cursor, range.end);
+  }
+
+  const mdatEnd = mdat.offset + mdat.size;
+  if (cursor < mdatEnd) {
+    pushCoverageIssue(issues, `unreferenced mdat bytes from byte ${cursor} to ${mdatEnd - 1}`);
+  }
+}
+
 function validateMp4Bitstreams(mp4) {
   const issues = [];
   const { boxes, buffer } = mp4;
@@ -519,6 +571,8 @@ function validateMp4Bitstreams(mp4) {
   } catch (error) {
     return [`MP4 sample table inspection failed: ${error.message}`];
   }
+
+  validateMdatSampleCoverage(issues, mdat, trackSamples);
 
   for (const trackInfo of trackSamples) {
     for (const sample of trackInfo.samples) {

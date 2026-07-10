@@ -18,6 +18,7 @@
     "test:phase11": "node --test test/phase1.test.js",
     "test:phase12": "node --test test/phase12.test.js",
     "test:phase13": "node --test test/phase13.test.js",
+    "test:phase14": "node --test test/phase14.test.js",
     "test:desktop:smoke": "electron . --smoke-test"
   },
   "devDependencies": {
