@@ -4,13 +4,41 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
-const { buildExportPlan, exportProject } = require("../src/export-project");
+const { buildExportPlan, exportProject, exportQualityPreset } = require("../src/export-project");
 const { runProcess } = require("../src/process");
 const { probeFile } = require("../src/probe");
 
 const tempRoot = path.join(process.cwd(), ".tmp-export-tests");
 const sourceFile = path.join(tempRoot, "SOURCE_SECRET_CAMERA.mp4");
 const outputFile = path.join(tempRoot, "anonymous-export.mp4");
+
+test("export quality presets choose normalized compression settings", () => {
+  assert.deepEqual(
+    {
+      id: exportQualityPreset("high").id,
+      crf: exportQualityPreset("high").crf,
+      audioBitrate: exportQualityPreset("high").audioBitrate,
+    },
+    { id: "high", crf: "20", audioBitrate: "192k" },
+  );
+  assert.deepEqual(
+    {
+      id: exportQualityPreset("balanced").id,
+      crf: exportQualityPreset("balanced").crf,
+      audioBitrate: exportQualityPreset("balanced").audioBitrate,
+    },
+    { id: "balanced", crf: "24", audioBitrate: "128k" },
+  );
+  assert.deepEqual(
+    {
+      id: exportQualityPreset("small").id,
+      crf: exportQualityPreset("small").crf,
+      audioBitrate: exportQualityPreset("small").audioBitrate,
+    },
+    { id: "small", crf: "28", audioBitrate: "96k" },
+  );
+  assert.equal(exportQualityPreset("unknown").id, "balanced");
+});
 
 test.before(async () => {
   fs.rmSync(tempRoot, { recursive: true, force: true });

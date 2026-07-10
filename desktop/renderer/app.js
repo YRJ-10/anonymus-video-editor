@@ -4,6 +4,7 @@ const Timeline = window.TimelineModel;
 const History = window.EditorHistory;
 
 const elements = {
+  newProject: document.querySelector("#new-project"),
   openProject: document.querySelector("#open-project"),
   saveProject: document.querySelector("#save-project"),
   undo: document.querySelector("#undo"),
@@ -17,7 +18,15 @@ const elements = {
   exportTitle: document.querySelector("#export-title"),
   exportProgress: document.querySelector("#export-progress"),
   exportStage: document.querySelector("#export-stage"),
+  exportQualityRow: document.querySelector("#export-quality-row"),
+  exportQuality: document.querySelector("#export-quality"),
   exportVerification: document.querySelector("#export-verification"),
+  exportActions: document.querySelector("#export-actions"),
+  startExport: document.querySelector("#start-export"),
+  cancelExport: document.querySelector("#cancel-export"),
+  exportResultActions: document.querySelector("#export-result-actions"),
+  showExportFolder: document.querySelector("#show-export-folder"),
+  openExportFile: document.querySelector("#open-export-file"),
   closeExport: document.querySelector("#close-export"),
   canvasLandscape: document.querySelector("#canvas-landscape"),
   canvasPortrait: document.querySelector("#canvas-portrait"),
@@ -115,6 +124,7 @@ const state = {
   clipboard: null,
   statusTimer: null,
   exportInProgress: false,
+  lastExportPath: null,
   canvas: null,
   mediaTransformDrag: null,
   cropOriginal: null,
@@ -405,37 +415,125 @@ async function openProject() {
   }
 }
 
+async function newProject() {
+  if (
+    (state.assets.length > 0 || state.clips.length > 0) &&
+    !confirm("Discard the current project and start a new one?")
+  ) {
+    return;
+  }
+  try {
+    await window.anonEditor.newProject();
+  } catch {
+    // Local reset still works if the main process cannot clear its project path.
+  }
+  elements.video.pause();
+  pauseOverlayVideos();
+  state.assets = [];
+  state.selectedPath = null;
+  state.loadedAssetPath = null;
+  state.pendingVideoSeek = null;
+  state.zoom = 1;
+  state.panX = 0;
+  state.panY = 0;
+  state.clips = [];
+  state.tracks = [{ id: "v1", name: "V1", kind: "video" }];
+  state.activeTrackId = "v1";
+  state.selectedClipId = null;
+  state.playhead = 0;
+  state.pixelsPerSecond = 90;
+  state.timelineSnapEnabled = true;
+  state.timelinePreview = false;
+  state.baseClipId = null;
+  state.compositionSignature = "";
+  state.clipboard = null;
+  state.exportInProgress = false;
+  state.lastExportPath = null;
+  state.canvas = null;
+  elements.projectName.textContent = "Untitled project";
+  elements.timelineZoom.value = String(state.pixelsPerSecond);
+  elements.video.removeAttribute("src");
+  elements.image.removeAttribute("src");
+  elements.video.classList.remove("visible");
+  elements.image.classList.remove("visible");
+  elements.overlayStage.replaceChildren();
+  elements.previewEmpty.classList.remove("hidden");
+  elements.selectedName.textContent = "Nothing selected";
+  elements.play.disabled = true;
+  elements.seek.disabled = true;
+  elements.seek.value = "0";
+  elements.currentTime.textContent = "00:00";
+  elements.duration.textContent = "00:00";
+  resetView();
+  updateCanvasSurface();
+  renderAssets();
+  renderTimeline();
+  state.history = History.create(captureEditingState());
+  updateEditControls();
+  showStatus("New project ready");
+}
+
+function prepareExportDialog() {
+  if (state.exportInProgress || state.clips.length === 0) return;
+  state.lastExportPath = null;
+  elements.exportTitle.textContent = "Export anonymous MP4";
+  elements.exportProgress.value = 0;
+  elements.exportProgress.hidden = true;
+  elements.exportStage.textContent =
+    "Choose compression. Output stays MP4 and must pass privacy verification.";
+  elements.exportQualityRow.hidden = false;
+  elements.exportVerification.textContent = "";
+  elements.exportVerification.classList.remove("error");
+  elements.exportActions.hidden = false;
+  elements.exportResultActions.hidden = true;
+  elements.showExportFolder.hidden = false;
+  elements.openExportFile.hidden = false;
+  elements.startExport.disabled = false;
+  elements.cancelExport.disabled = false;
+  if (!elements.exportDialog.open) elements.exportDialog.showModal();
+}
+
 async function exportTimeline() {
   if (state.exportInProgress || state.clips.length === 0) return;
   state.exportInProgress = true;
   updateEditControls();
   elements.exportTitle.textContent = "Rendering 1080p video";
+  elements.exportProgress.hidden = false;
   elements.exportProgress.value = 0;
   elements.exportStage.textContent = "Choose the output file…";
   elements.exportVerification.textContent = "";
   elements.exportVerification.classList.remove("error");
-  elements.closeExport.hidden = true;
+  elements.exportQualityRow.hidden = true;
+  elements.exportActions.hidden = true;
+  elements.exportResultActions.hidden = true;
   if (!elements.exportDialog.open) elements.exportDialog.showModal();
 
   try {
-    const result = await window.anonEditor.exportVideo(projectPayload());
+    const result = await window.anonEditor.exportVideo(projectPayload(), {
+      quality: elements.exportQuality.value,
+    });
     if (!result) {
       elements.exportDialog.close();
       return;
     }
+    state.lastExportPath = result.output;
     elements.exportProgress.value = 1;
     elements.exportTitle.textContent = "Anonymous export complete";
     elements.exportStage.textContent = result.output;
     elements.exportVerification.textContent =
-      "Source metadata: 0 · Chapters: 0 · Privacy verification passed";
-    elements.closeExport.hidden = false;
+      `Preset: ${result.quality || elements.exportQuality.value} · Source metadata: 0 · Chapters: 0 · Privacy verification passed`;
+    elements.exportResultActions.hidden = false;
+    elements.showExportFolder.hidden = false;
+    elements.openExportFile.hidden = false;
     showStatus("1080p export completed and verified");
   } catch (error) {
     elements.exportTitle.textContent = "Export blocked";
     elements.exportStage.textContent = "No output file was published.";
     elements.exportVerification.textContent = error.message;
     elements.exportVerification.classList.add("error");
-    elements.closeExport.hidden = false;
+    elements.exportResultActions.hidden = false;
+    elements.showExportFolder.hidden = true;
+    elements.openExportFile.hidden = true;
   } finally {
     state.exportInProgress = false;
     updateEditControls();
@@ -1809,8 +1907,19 @@ elements.cropDialog.addEventListener("cancel", (event) => {
   event.preventDefault();
   cancelCropDialog();
 });
-elements.exportVideo.addEventListener("click", exportTimeline);
+elements.exportVideo.addEventListener("click", prepareExportDialog);
+elements.startExport.addEventListener("click", exportTimeline);
+elements.cancelExport.addEventListener("click", () => elements.exportDialog.close());
 elements.closeExport.addEventListener("click", () => elements.exportDialog.close());
+elements.showExportFolder.addEventListener("click", () => {
+  if (state.lastExportPath) window.anonEditor.showInFolder(state.lastExportPath);
+});
+elements.openExportFile.addEventListener("click", async () => {
+  if (!state.lastExportPath) return;
+  const error = await window.anonEditor.openFile(state.lastExportPath);
+  if (error) showStatus(`Could not open export: ${error}`, true);
+});
+elements.newProject.addEventListener("click", newProject);
 elements.openProject.addEventListener("click", openProject);
 elements.saveProject.addEventListener("click", saveProject);
 elements.undo.addEventListener("click", undoEdit);
@@ -1826,9 +1935,10 @@ elements.textForm.addEventListener("submit", (event) => {
   applyTextDialog();
 });
 window.anonEditor.onPickRequested(addMedia);
+window.anonEditor.onNewProjectRequested(newProject);
 window.anonEditor.onOpenProjectRequested(openProject);
 window.anonEditor.onSaveProjectRequested(saveProject);
-window.anonEditor.onExportRequested(exportTimeline);
+window.anonEditor.onExportRequested(prepareExportDialog);
 window.anonEditor.onExportProgress(({ progress, stage }) => {
   if (!state.exportInProgress) return;
   elements.exportProgress.value = clamp(Number(progress) || 0, 0, 1);
@@ -2077,7 +2187,10 @@ document.addEventListener("keydown", (event) => {
     saveProject();
   } else if (command && key === "e") {
     event.preventDefault();
-    exportTimeline();
+    prepareExportDialog();
+  } else if (command && key === "n") {
+    event.preventDefault();
+    newProject();
   } else if (command && key === "z" && event.shiftKey) {
     event.preventDefault();
     redoEdit();

@@ -9,6 +9,31 @@ const { verifyFile } = require("./verify");
 const { removeMoovMetadataBoxes } = require("./mp4");
 const { normalizeTransform } = require("../desktop/renderer/timeline-model");
 
+const EXPORT_QUALITY_PRESETS = Object.freeze({
+  high: Object.freeze({
+    id: "high",
+    label: "High Quality",
+    crf: "20",
+    audioBitrate: "192k",
+  }),
+  balanced: Object.freeze({
+    id: "balanced",
+    label: "Balanced",
+    crf: "24",
+    audioBitrate: "128k",
+  }),
+  small: Object.freeze({
+    id: "small",
+    label: "Small File",
+    crf: "28",
+    audioBitrate: "96k",
+  }),
+});
+
+function exportQualityPreset(value) {
+  return EXPORT_QUALITY_PRESETS[value] || EXPORT_QUALITY_PRESETS.balanced;
+}
+
 function clipDuration(clip) {
   return Math.max(0, Number(clip.sourceOut) - Number(clip.sourceIn));
 }
@@ -334,6 +359,7 @@ async function exportProject(project, outputPath, options = {}) {
   fs.mkdirSync(path.dirname(output), { recursive: true });
   const temporaryPaths = makeTemporaryPaths(output);
   const plan = await buildExportPlan(project, temporaryPaths);
+  const quality = exportQualityPreset(options.quality);
   const args = [
     "-hide_banner",
     "-loglevel",
@@ -359,7 +385,7 @@ async function exportProject(project, outputPath, options = {}) {
     "-preset",
     "medium",
     "-crf",
-    "20",
+    quality.crf,
     "-pix_fmt",
     "yuv420p",
     "-profile:v",
@@ -381,7 +407,7 @@ async function exportProject(project, outputPath, options = {}) {
     "-c:a",
     "aac",
     "-b:a",
-    "192k",
+    quality.audioBitrate,
     "-ar",
     "48000",
     "-ac",
@@ -435,6 +461,7 @@ async function exportProject(project, outputPath, options = {}) {
     return {
       output,
       duration: plan.duration,
+      quality: quality.id,
       verification: { ...verification, file: output },
     };
   } finally {
@@ -453,6 +480,7 @@ module.exports = {
   buildExportPlan,
   escapeFilterPath,
   exportProject,
+  exportQualityPreset,
   findSystemFont,
   projectDuration,
 };

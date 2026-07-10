@@ -12,12 +12,16 @@ contextBridge.exposeInMainWorld(
   "anonEditor",
   Object.freeze({
     pickMedia: () => ipcRenderer.invoke("media:pick"),
+    newProject: () => ipcRenderer.invoke("project:new"),
     saveProject: (project) => ipcRenderer.invoke("project:save", project),
     openProject: () => ipcRenderer.invoke("project:open"),
-    exportVideo: (project) => ipcRenderer.invoke("export:video", project),
+    exportVideo: (project, options) => ipcRenderer.invoke("export:video", project, options),
+    showInFolder: (filePath) => ipcRenderer.invoke("output:show-in-folder", filePath),
+    openFile: (filePath) => ipcRenderer.invoke("output:open-file", filePath),
     onPickRequested: (callback) => {
       return subscribe("media:request-pick", callback);
     },
+    onNewProjectRequested: (callback) => subscribe("project:request-new", callback),
     onOpenProjectRequested: (callback) => subscribe("project:request-open", callback),
     onSaveProjectRequested: (callback) => subscribe("project:request-save", callback),
     onExportRequested: (callback) => subscribe("export:request", callback),

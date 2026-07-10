@@ -11,6 +11,7 @@ const {
   ipcMain,
   Menu,
   session,
+  shell,
 } = require("electron");
 const {
   IMAGE_EXTENSIONS,
@@ -143,6 +144,13 @@ function createWindow() {
               document.querySelector('img.preview-empty-mark[src$="appicon.png"]') &&
               document.querySelector('img.export-mark[src$="appicon.png"]')
             ),
+            hasExportQualityUi: Boolean(
+              document.querySelector("#new-project") &&
+              document.querySelector("#export-quality") &&
+              document.querySelector("#start-export") &&
+              document.querySelector("#show-export-folder") &&
+              document.querySelector("#open-export-file")
+            ),
           })
         `);
         const ready = Object.values(result).every(Boolean);
@@ -215,6 +223,11 @@ async function pickMedia() {
   return Object.freeze(media);
 }
 
+function newProject() {
+  currentProjectPath = null;
+  return true;
+}
+
 async function saveProject(_event, project) {
   const serialized = serializeProject(project);
   let destination = currentProjectPath;
@@ -280,12 +293,18 @@ async function openProject() {
   };
 }
 
-async function exportVideo(_event, projectInput) {
+function defaultExportPath(project) {
+  const firstAssetPath = project.assets?.find((asset) => asset?.path)?.path;
+  const directory = firstAssetPath ? path.dirname(firstAssetPath) : app.getPath("videos");
+  return path.join(directory, "anonymous-video.mp4");
+}
+
+async function exportVideo(_event, projectInput, options = {}) {
   const project = parseProject(serializeProject(projectInput));
   const result = await dialog.showSaveDialog(mainWindow, {
     title: "Export anonymous video",
     buttonLabel: "Export 1080p",
-    defaultPath: "anonymous-video.mp4",
+    defaultPath: defaultExportPath(project),
     filters: [{ name: "MP4 Video", extensions: ["mp4"] }],
   });
   if (result.canceled || !result.filePath) return null;
@@ -299,6 +318,7 @@ async function exportVideo(_event, projectInput) {
   });
   const exported = await exportProject(project, destination, {
     force: true,
+    quality: options.quality,
     onProgress: (progress) => {
       mainWindow.webContents.send("export:progress", {
         progress,
@@ -313,8 +333,24 @@ async function exportVideo(_event, projectInput) {
   return {
     output: exported.output,
     duration: exported.duration,
+    quality: exported.quality,
     verification: exported.verification.summary,
   };
+}
+
+function showOutputInFolder(_event, filePath) {
+  if (typeof filePath === "string" && fs.existsSync(filePath)) {
+    shell.showItemInFolder(filePath);
+    return true;
+  }
+  return false;
+}
+
+async function openOutputFile(_event, filePath) {
+  if (typeof filePath !== "string" || !fs.existsSync(filePath)) {
+    return "Output file does not exist";
+  }
+  return shell.openPath(filePath);
 }
 
 function createMenu() {
@@ -322,6 +358,11 @@ function createMenu() {
     {
       label: "File",
       submenu: [
+        {
+          label: "New project",
+          accelerator: "CmdOrCtrl+N",
+          click: () => mainWindow?.webContents.send("project:request-new"),
+        },
         {
           label: "Open project",
           accelerator: "CmdOrCtrl+Shift+O",
@@ -360,9 +401,12 @@ function createMenu() {
 app.whenReady().then(() => {
   installOfflineBoundary();
   ipcMain.handle("media:pick", pickMedia);
+  ipcMain.handle("project:new", newProject);
   ipcMain.handle("project:save", saveProject);
   ipcMain.handle("project:open", openProject);
   ipcMain.handle("export:video", exportVideo);
+  ipcMain.handle("output:show-in-folder", showOutputInFolder);
+  ipcMain.handle("output:open-file", openOutputFile);
   Menu.setApplicationMenu(createMenu());
   createWindow();
 

@@ -22,6 +22,7 @@
         </div>
 
         <div class="top-actions">
+          <button id="new-project" type="button" title="New project (Ctrl+N)">New</button>
           <button id="open-project" type="button" title="Open project">Open</button>
           <button id="save-project" type="button" title="Save project (Ctrl+S)">Save</button>
           <div class="canvas-switch" aria-label="Project orientation">
@@ -286,8 +287,24 @@
         </div>
         <progress id="export-progress" max="1" value="0"></progress>
         <p id="export-stage">Preparing timeline…</p>
+        <label id="export-quality-row" class="export-quality-row">
+          Compression
+          <select id="export-quality">
+            <option value="balanced" selected>Balanced — 1080p, smaller file</option>
+            <option value="high">High Quality — 1080p, larger file</option>
+            <option value="small">Small File — 1080p, strongest compression</option>
+          </select>
+        </label>
         <div id="export-verification" class="export-verification"></div>
-        <button id="close-export" type="button" hidden>Done</button>
+        <div id="export-actions" class="export-actions">
+          <button id="cancel-export" type="button">Cancel</button>
+          <button id="start-export" class="primary-button" type="button">Choose location</button>
+        </div>
+        <div id="export-result-actions" class="export-actions" hidden>
+          <button id="show-export-folder" type="button">Show in folder</button>
+          <button id="open-export-file" type="button">Open file</button>
+          <button id="close-export" type="button">Done</button>
+        </div>
       </div>
     </dialog>
 

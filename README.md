@@ -24,7 +24,9 @@ passes. The resulting file contains no unique Anon Editor ID or project marker.
 
 - Output: MP4, H.264 High 4.1, 30 FPS, YUV420p, BT.709
 - Canvas: 1920x1080 landscape or 1080x1920 portrait
-- Audio: AAC, 192 kbps, 48 kHz stereo, one normalized output stream
+- Export presets: High Quality, Balanced, and Small File, all verified as
+  anonymous MP4 output
+- Audio: AAC, 48 kHz stereo, one normalized output stream
 - Timeline: up to 100 video/audio tracks and 100,000 clips
 - Editing: slice, trim, move, overlays, text, crop, Fit/Fill, volume, mute,
   detached audio, undo/redo, copy/paste, and timeline snapping
