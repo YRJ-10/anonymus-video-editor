@@ -8,9 +8,11 @@ const {
   shouldBlockRequest,
 } = require("../desktop/media-policy");
 
-test("desktop media picker classifies supported video and photo formats", () => {
+test("desktop media picker classifies supported video, photo, and audio formats", () => {
   assert.equal(classifyMediaFile("D:\\Media\\clip.MP4"), "video");
   assert.equal(classifyMediaFile("D:\\Media\\photo.JPEG"), "image");
+  assert.equal(classifyMediaFile("D:\\Media\\music.MP3"), "audio");
+  assert.equal(classifyMediaFile("D:\\Media\\voice.WAV"), "audio");
   assert.equal(classifyMediaFile("D:\\Media\\notes.txt"), null);
   assert.equal(classifyMediaFile("D:\\Media\\fake.mp4.exe"), null);
 });

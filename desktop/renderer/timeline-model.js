@@ -255,6 +255,28 @@
     };
   }
 
+  function createAudioAssetClip({ id, asset, start = 0, trackId = "a1" }) {
+    if (!id) throw new Error("An audio clip id is required");
+    if (!asset?.path || !asset?.name || asset?.type !== "audio") {
+      throw new Error("A valid audio asset is required");
+    }
+    const duration = finiteNumber(asset.duration);
+    if (duration <= 0) throw new Error("Audio duration must be known before adding it");
+    return {
+      id,
+      assetPath: asset.path,
+      assetName: asset.name,
+      type: "audio",
+      trackId,
+      start: roundTime(Math.max(0, finiteNumber(start))),
+      sourceIn: 0,
+      sourceOut: roundTime(duration),
+      assetDuration: roundTime(duration),
+      volume: 1,
+      muted: false,
+    };
+  }
+
   function clampNumber(value, minimum, maximum) {
     return Math.min(maximum, Math.max(minimum, finiteNumber(Number(value), minimum)));
   }
@@ -526,6 +548,7 @@
     clipDuration,
     clipEnd,
     createAudioClip,
+    createAudioAssetClip,
     createBlurClip,
     createClip,
     createTextClip,

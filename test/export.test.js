@@ -340,3 +340,45 @@ test("detached audio is mixed once with its independent volume", async () => {
   const probe = await probeFile(output);
   assert.equal(probe.streams.filter((stream) => stream.codec_type === "audio").length, 1);
 });
+
+test("external audio assets are mixed into anonymous export", async () => {
+  const project = {
+    assets: [
+      {
+        path: sourceFile,
+        name: "music.mp3",
+        type: "audio",
+        duration: 1.2,
+        hasAudio: true,
+      },
+    ],
+    tracks: [{ id: "a1", name: "A1", kind: "audio" }],
+    clips: [
+      {
+        id: "music",
+        assetPath: sourceFile,
+        assetName: "music.mp3",
+        type: "audio",
+        trackId: "a1",
+        start: 0,
+        sourceIn: 0,
+        sourceOut: 0.8,
+        assetDuration: 1.2,
+        volume: 0.65,
+        muted: false,
+      },
+    ],
+  };
+  const plan = await buildExportPlan(project, {
+    output: path.join(tempRoot, "external-audio-render.mp4"),
+    supportDirectory: path.join(tempRoot, "external-audio-support"),
+  });
+  assert.match(plan.filterGraph, /volume=0\.65,adelay=.*\[detachedAudio0\]/);
+
+  const output = path.join(tempRoot, "external-audio-anonymous.mp4");
+  const result = await exportProject(project, output, { force: true });
+  assert.equal(result.verification.ok, true);
+  const probe = await probeFile(output);
+  assert.equal(probe.streams.filter((stream) => stream.codec_type === "video").length, 1);
+  assert.equal(probe.streams.filter((stream) => stream.codec_type === "audio").length, 1);
+});

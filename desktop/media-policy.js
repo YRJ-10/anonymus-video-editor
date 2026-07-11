@@ -26,10 +26,20 @@ const IMAGE_EXTENSIONS = new Set([
   ".tiff",
 ]);
 
+const AUDIO_EXTENSIONS = new Set([
+  ".mp3",
+  ".wav",
+  ".m4a",
+  ".aac",
+  ".flac",
+  ".ogg",
+]);
+
 function classifyMediaFile(filePath) {
   const extension = path.extname(filePath).toLowerCase();
   if (VIDEO_EXTENSIONS.has(extension)) return "video";
   if (IMAGE_EXTENSIONS.has(extension)) return "image";
+  if (AUDIO_EXTENSIONS.has(extension)) return "audio";
   return null;
 }
 
@@ -57,6 +67,7 @@ function displayDimensions(stream) {
 }
 
 module.exports = {
+  AUDIO_EXTENSIONS,
   IMAGE_EXTENSIONS,
   VIDEO_EXTENSIONS,
   classifyMediaFile,

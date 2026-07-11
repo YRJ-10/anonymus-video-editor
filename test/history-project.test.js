@@ -125,6 +125,45 @@ test("project files preserve detached audio tracks and volume", () => {
   assert.equal(parsed.pixelsPerSecond, 8);
 });
 
+test("project files preserve external audio assets", () => {
+  const project = {
+    format: PROJECT_FORMAT,
+    version: PROJECT_VERSION,
+    assets: [
+      {
+        path: "D:\\Media\\music.mp3",
+        name: "music.mp3",
+        type: "audio",
+        duration: 12,
+        hasAudio: true,
+      },
+    ],
+    tracks: [{ id: "a1", name: "A1", kind: "audio" }],
+    clips: [
+      {
+        id: "music",
+        assetPath: "D:\\Media\\music.mp3",
+        assetName: "music.mp3",
+        type: "audio",
+        trackId: "a1",
+        start: 0,
+        sourceIn: 1,
+        sourceOut: 8,
+        assetDuration: 12,
+        volume: 0.75,
+        muted: false,
+      },
+    ],
+    activeTrackId: "a1",
+  };
+
+  const parsed = parseProject(serializeProject(project));
+  assert.equal(parsed.assets[0].type, "audio");
+  assert.equal(parsed.assets[0].duration, 12);
+  assert.equal(parsed.clips[0].type, "audio");
+  assert.equal(parsed.clips[0].volume, 0.75);
+});
+
 test("project files preserve media color adjustment", () => {
   const project = {
     format: PROJECT_FORMAT,

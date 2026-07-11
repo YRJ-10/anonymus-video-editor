@@ -11,6 +11,13 @@ const videoAsset = {
   duration: 10,
 };
 
+const audioAsset = {
+  path: "D:\\Media\\music.mp3",
+  name: "music.mp3",
+  type: "audio",
+  duration: 12,
+};
+
 test("timeline appends clips without losing their source ranges", () => {
   const first = Timeline.createClip({ id: "a", asset: videoAsset });
   const second = Timeline.createClip({ id: "b", asset: videoAsset });
@@ -52,6 +59,24 @@ test("detached audio inherits the video source range and audio level", () => {
   assert.equal(audio.sourceOut, 8);
   assert.equal(audio.volume, 1.4);
   assert.equal(audio.muted, true);
+});
+
+test("external audio assets create audio timeline clips", () => {
+  const audio = Timeline.createAudioAssetClip({
+    id: "music",
+    asset: audioAsset,
+    trackId: "a1",
+    start: 3,
+  });
+
+  assert.equal(audio.type, "audio");
+  assert.equal(audio.assetPath, audioAsset.path);
+  assert.equal(audio.trackId, "a1");
+  assert.equal(audio.start, 3);
+  assert.equal(audio.sourceIn, 0);
+  assert.equal(audio.sourceOut, 12);
+  assert.equal(audio.volume, 1);
+  assert.equal(audio.muted, false);
 });
 
 test("timeline split preserves total duration and source continuity", () => {

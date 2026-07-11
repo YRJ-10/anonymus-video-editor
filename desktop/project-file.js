@@ -37,7 +37,9 @@ function normalizeProject(input) {
 
   const assets = input.assets.map((asset) => {
     const type = asset?.type;
-    if (!["video", "image"].includes(type)) throw new Error("Unsupported asset type");
+    if (!["video", "image", "audio"].includes(type)) {
+      throw new Error("Unsupported asset type");
+    }
     const assetPath = cleanString(asset.path);
     if (!assetPath) throw new Error("Asset path cannot be empty");
     return {

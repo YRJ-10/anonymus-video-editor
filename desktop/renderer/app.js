@@ -76,6 +76,7 @@ const elements = {
   overlayStage: document.querySelector("#overlay-stage"),
   previewEmpty: document.querySelector("#preview-empty"),
   video: document.querySelector("#video-preview"),
+  audio: document.querySelector("#audio-preview"),
   image: document.querySelector("#image-preview"),
   play: document.querySelector("#play-toggle"),
   seek: document.querySelector("#seek"),
@@ -218,6 +219,10 @@ function ensureAudioTrack() {
   return track;
 }
 
+function targetAudioTrackName() {
+  return state.tracks.find((candidate) => trackKind(candidate.id) === "audio")?.name || "A1";
+}
+
 function targetVideoTrack() {
   const active = state.tracks.find(
     (track) => track.id === state.activeTrackId && trackKind(track.id) === "video",
@@ -349,8 +354,10 @@ function restoreEditingState(snapshot) {
   state.blurDrag = null;
   state.colorOriginal = null;
   elements.video.removeAttribute("src");
+  elements.audio.removeAttribute("src");
   elements.image.removeAttribute("src");
   elements.video.classList.remove("visible");
+  elements.audio.classList.remove("visible");
   elements.image.classList.remove("visible");
   elements.overlayStage.replaceChildren();
   elements.timelineZoom.value = String(state.pixelsPerSecond);
@@ -510,8 +517,10 @@ async function newProject() {
   elements.projectName.textContent = "Untitled project";
   elements.timelineZoom.value = String(state.pixelsPerSecond);
   elements.video.removeAttribute("src");
+  elements.audio.removeAttribute("src");
   elements.image.removeAttribute("src");
   elements.video.classList.remove("visible");
+  elements.audio.classList.remove("visible");
   elements.image.classList.remove("visible");
   elements.overlayStage.replaceChildren();
   elements.previewEmpty.classList.remove("hidden");
@@ -826,11 +835,12 @@ function setZoom(nextZoom, anchor) {
 function updateAddToTimelineButton() {
   const asset = selectedAsset();
   const track = targetVideoTrack();
+  const destinationName = asset?.type === "audio" ? targetAudioTrackName() : track?.name;
   elements.addToTimeline.disabled =
     !asset ||
     !Number.isFinite(asset.duration) ||
-    !track;
-  elements.addToTimeline.textContent = `＋ Add to ${track?.name || "timeline"}`;
+    (asset.type !== "audio" && !track);
+  elements.addToTimeline.textContent = `＋ Add to ${destinationName || "timeline"}`;
 }
 
 function audioEditableClip() {
@@ -914,7 +924,7 @@ function renderAssets() {
 
     const icon = document.createElement("span");
     icon.className = "asset-type";
-    icon.textContent = asset.type === "video" ? "VID" : "IMG";
+    icon.textContent = asset.type === "video" ? "VID" : asset.type === "audio" ? "AUD" : "IMG";
 
     const copy = document.createElement("span");
     copy.className = "asset-copy";
@@ -928,6 +938,10 @@ function renderAssets() {
         ? Number.isFinite(asset.duration)
           ? `${formatTime(asset.duration)} video`
           : "Loading video…"
+        : asset.type === "audio"
+        ? Number.isFinite(asset.duration)
+          ? `${formatTime(asset.duration)} audio`
+          : "Loading audio…"
         : "5 second photo";
     copy.append(name, type);
 
@@ -951,6 +965,9 @@ function renderAssets() {
 
 function playbackElement() {
   if (elements.video.classList.contains("visible")) return elements.video;
+  if (!state.timelinePreview && elements.audio.classList.contains("visible")) {
+    return elements.audio;
+  }
   return elements.overlayStage.querySelector("audio.composition-audio");
 }
 
@@ -1024,15 +1041,24 @@ function selectAsset(asset, options = {}) {
 
   if (!alreadyLoaded) {
     elements.video.pause();
+    elements.audio.pause();
     elements.video.removeAttribute("src");
+    elements.audio.removeAttribute("src");
     elements.image.removeAttribute("src");
     elements.video.classList.remove("visible");
+    elements.audio.classList.remove("visible");
     elements.image.classList.remove("visible");
 
     if (asset.type === "video") {
       elements.video.src = asset.url;
       elements.video.classList.add("visible");
       elements.video.load();
+      elements.play.disabled = false;
+      elements.seek.disabled = false;
+    } else if (asset.type === "audio") {
+      elements.audio.src = asset.url;
+      elements.audio.classList.add("visible");
+      elements.audio.load();
       elements.play.disabled = false;
       elements.seek.disabled = false;
     } else {
@@ -1048,12 +1074,20 @@ function selectAsset(asset, options = {}) {
     state.loadedAssetPath = asset.path;
   } else if (asset.type === "video") {
     elements.video.classList.add("visible");
+    elements.audio.classList.remove("visible");
+    elements.image.classList.remove("visible");
+    elements.play.disabled = false;
+    elements.seek.disabled = false;
+  } else if (asset.type === "audio") {
+    elements.audio.classList.add("visible");
+    elements.video.classList.remove("visible");
     elements.image.classList.remove("visible");
     elements.play.disabled = false;
     elements.seek.disabled = false;
   } else {
     elements.image.classList.add("visible");
     elements.video.classList.remove("visible");
+    elements.audio.classList.remove("visible");
     elements.play.disabled = true;
     elements.seek.disabled = true;
   }
@@ -1086,7 +1120,12 @@ async function addMedia() {
       if (!asset) {
         asset = {
           ...picked,
-          duration: picked.type === "image" ? 5 : null,
+          duration:
+            picked.type === "image"
+              ? 5
+              : Number.isFinite(picked.duration)
+                ? picked.duration
+                : null,
         };
         state.assets.push(asset);
         changed = true;
@@ -1099,6 +1138,10 @@ async function addMedia() {
         }
         if (picked.hasAudio && !asset.hasAudio) {
           asset.hasAudio = true;
+          changed = true;
+        }
+        if (!Number.isFinite(asset.duration) && Number.isFinite(picked.duration)) {
+          asset.duration = picked.duration;
           changed = true;
         }
       }
@@ -1123,14 +1166,22 @@ async function addMedia() {
 
 function addSelectedAssetToTimeline() {
   const asset = selectedAsset();
-  const track = targetVideoTrack();
-  if (!asset || !Number.isFinite(asset.duration) || !track) return;
+  if (!asset || !Number.isFinite(asset.duration)) return;
+  const track = asset.type === "audio" ? ensureAudioTrack() : targetVideoTrack();
+  if (!track) return;
 
-  const clip = Timeline.createClip({
-    id: crypto.randomUUID(),
-    asset,
-    trackId: track.id,
-  });
+  const clip =
+    asset.type === "audio"
+      ? Timeline.createAudioAssetClip({
+          id: crypto.randomUUID(),
+          asset,
+          trackId: track.id,
+        })
+      : Timeline.createClip({
+          id: crypto.randomUUID(),
+          asset,
+          trackId: track.id,
+        });
   state.clips = Timeline.appendClip(state.clips, clip);
   state.activeTrackId = track.id;
   state.selectedClipId = clip.id;
@@ -1446,6 +1497,7 @@ function setPlayhead(time, syncPreview = true) {
 function stepPlayheadFrames(frameDelta) {
   if (Timeline.timelineEnd(state.clips) <= 0) return;
   elements.video.pause();
+  elements.audio.pause();
   pauseOverlayVideos();
   const nextTime = Timeline.snapFrameTime(
     state.playhead + frameDelta / Timeline.FRAME_RATE,
@@ -1878,6 +1930,9 @@ function renderComposition() {
   const baseClip = mediaClips[0] || null;
   state.baseClipId = baseClip?.id || null;
   state.compositionSignature = compositionKey(activeClips, baseClip);
+  elements.audio.pause();
+  elements.audio.removeAttribute("src");
+  elements.audio.classList.remove("visible");
   elements.overlayStage.replaceChildren();
 
   if (baseClip) {
@@ -2618,6 +2673,15 @@ elements.video.addEventListener("loadedmetadata", () => {
   renderAssets();
 });
 
+elements.audio.addEventListener("loadedmetadata", () => {
+  const asset = state.assets.find((candidate) => candidate.path === state.loadedAssetPath);
+  if (asset?.type === "audio") asset.duration = elements.audio.duration;
+  elements.seek.max = String(elements.audio.duration || 0);
+  updatePlayback(elements.audio);
+  updateAddToTimelineButton();
+  renderAssets();
+});
+
 elements.image.addEventListener("load", () => {
   const asset = state.assets.find((candidate) => candidate.path === state.loadedAssetPath);
   if (asset?.type !== "image") return;
@@ -2655,6 +2719,14 @@ elements.video.addEventListener("pause", () => {
   pauseOverlayVideos();
 });
 elements.video.addEventListener("ended", updatePlayback);
+
+elements.audio.addEventListener("timeupdate", () => {
+  if (state.timelinePreview) return;
+  updatePlayback(elements.audio);
+});
+elements.audio.addEventListener("play", () => updatePlayback(elements.audio));
+elements.audio.addEventListener("pause", () => updatePlayback(elements.audio));
+elements.audio.addEventListener("ended", () => updatePlayback(elements.audio));
 
 async function togglePlayback() {
   const media = playbackElement();

@@ -14,6 +14,7 @@ const {
   shell,
 } = require("electron");
 const {
+  AUDIO_EXTENSIONS,
   IMAGE_EXTENSIONS,
   VIDEO_EXTENSIONS,
   classifyMediaFile,
@@ -180,16 +181,21 @@ function createWindow() {
 
 async function pickMedia() {
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: "Add video or photo",
+    title: "Add media",
     buttonLabel: "Add to project",
     properties: ["openFile", "multiSelections"],
     filters: [
       {
-        name: "Video and photos",
-        extensions: [...extensionList(VIDEO_EXTENSIONS), ...extensionList(IMAGE_EXTENSIONS)],
+        name: "Video, photos, and audio",
+        extensions: [
+          ...extensionList(VIDEO_EXTENSIONS),
+          ...extensionList(IMAGE_EXTENSIONS),
+          ...extensionList(AUDIO_EXTENSIONS),
+        ],
       },
       { name: "Video", extensions: extensionList(VIDEO_EXTENSIONS) },
       { name: "Photos", extensions: extensionList(IMAGE_EXTENSIONS) },
+      { name: "Audio", extensions: extensionList(AUDIO_EXTENSIONS) },
     ],
   });
 
@@ -200,7 +206,7 @@ async function pickMedia() {
     await dialog.showMessageBox(mainWindow, {
       type: "error",
       title: "Unsupported file",
-      message: "Anon Editor currently accepts video and photo files only.",
+      message: "Anon Editor accepts video, photo, and audio files.",
     });
     return [];
   }
@@ -210,6 +216,7 @@ async function pickMedia() {
       const type = classifyMediaFile(filePath);
       let dimensions = { width: 0, height: 0 };
       let hasAudio = false;
+      let duration = null;
       try {
         const probe = await probeFile(filePath);
         const visualStream = (probe.streams || []).find(
@@ -217,6 +224,7 @@ async function pickMedia() {
         );
         dimensions = displayDimensions(visualStream);
         hasAudio = (probe.streams || []).some((stream) => stream.codec_type === "audio");
+        duration = Number(probe.format?.duration);
       } catch {
         // The renderer can still load each selected file and inspect it locally.
       }
@@ -225,6 +233,7 @@ async function pickMedia() {
         path: filePath,
         type,
         url: pathToFileURL(filePath).href,
+        duration: Number.isFinite(duration) && duration > 0 ? duration : null,
         width: dimensions.width || null,
         height: dimensions.height || null,
         hasAudio,
