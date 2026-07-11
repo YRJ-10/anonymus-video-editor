@@ -757,6 +757,18 @@ function textHasKeyframes(clip) {
   return Array.isArray(clip?.keyframes) && clip.keyframes.length > 0;
 }
 
+function textKeyframeCount(clip) {
+  return Array.isArray(clip?.keyframes) ? clip.keyframes.length : 0;
+}
+
+function textHasKeyframeAtPlayhead(clip) {
+  if (!clip || clip.type !== "text" || !Array.isArray(clip.keyframes)) return false;
+  const sourceTime = Timeline.snapFrameTime(
+    clamp(clip.sourceIn + state.playhead - clip.start, 0, clip.assetDuration || clip.sourceOut),
+  );
+  return clip.keyframes.some((keyframe) => Math.abs(keyframe.time - sourceTime) <= 0.0334);
+}
+
 function blurTrackingCount(clip) {
   return Array.isArray(clip?.keyframes) ? clip.keyframes.length : 0;
 }
@@ -1222,10 +1234,17 @@ function updateTimelineControls() {
   elements.splitClip.disabled = !canSplit;
   elements.deleteClip.disabled = !clip && !selectedAsset();
   elements.editText.disabled = clip?.type !== "text";
+  const textKeyframes = textKeyframeCount(clip);
+  elements.addTextKeyframe.textContent =
+    clip?.type === "text" && textHasKeyframeAtPlayhead(clip)
+      ? `Update key (${textKeyframes})`
+      : `Keyframe (${textKeyframes})`;
   elements.addTextKeyframe.disabled =
     clip?.type !== "text" ||
     state.playhead < clip.start ||
     state.playhead >= Timeline.clipEnd(clip);
+  elements.clearTextKeyframes.textContent =
+    textKeyframes > 0 ? `Clear keys (${textKeyframes})` : "Clear keys";
   elements.clearTextKeyframes.disabled = clip?.type !== "text" || !textHasKeyframes(clip);
   elements.editBlur.disabled = clip?.type !== "blur";
   elements.timelineTimecode.textContent = formatTimelineTime(state.playhead);
@@ -1761,11 +1780,14 @@ function addSelectedTextKeyframe() {
   const clip = selectedTextClip();
   if (!clip || state.playhead < clip.start || state.playhead >= Timeline.clipEnd(clip)) return;
   const position = Timeline.textPositionAt(clip, state.playhead);
+  const updating = textHasKeyframeAtPlayhead(clip);
   state.clips = Timeline.updateTextClipAtTime(state.clips, clip.id, state.playhead, position);
+  const updated = state.clips.find((candidate) => candidate.id === clip.id);
+  const count = textKeyframeCount(updated);
   renderTimeline();
   renderComposition();
   commitEdit();
-  showStatus("Text keyframe added");
+  showStatus(`${updating ? "Text keyframe updated" : "Text keyframe added"} (${count})`);
 }
 
 function clearSelectedTextKeyframes() {
@@ -2061,7 +2083,15 @@ function renderComposition() {
       text.className = "text-overlay";
       text.classList.toggle("selected", clip.id === state.selectedClipId);
       text.textContent = clip.text;
-      text.classList.toggle("tracking", textHasKeyframes(clip));
+      const keyframeCount = textKeyframeCount(clip);
+      text.classList.toggle("tracking", keyframeCount > 0);
+      text.classList.toggle("keyframe-now", textHasKeyframeAtPlayhead(clip));
+      if (keyframeCount > 0) {
+        text.dataset.keyframes =
+          `${keyframeCount} key${keyframeCount === 1 ? "" : "s"}` +
+          `${textHasKeyframeAtPlayhead(clip) ? " • current" : ""}`;
+        text.title = "Text has manual position keyframes";
+      }
       const position = Timeline.textPositionAt(clip, state.playhead);
       text.style.left = `${position.x}%`;
       text.style.top = `${position.y}%`;
