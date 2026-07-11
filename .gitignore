@@ -42,6 +42,7 @@ Desktop.ini
 $RECYCLE.BIN/
 
 # Locally bundled tools and compiled binaries
+.build-tools/
 tools/bin/
 vendor/
 *.exe
