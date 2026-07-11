@@ -2082,6 +2082,7 @@ function renderComposition() {
       const text = document.createElement("div");
       text.className = "text-overlay";
       text.classList.toggle("selected", clip.id === state.selectedClipId);
+      text.dataset.clipId = clip.id;
       text.textContent = clip.text;
       const keyframeCount = textKeyframeCount(clip);
       text.classList.toggle("tracking", keyframeCount > 0);
@@ -2211,6 +2212,7 @@ function syncCompositionDuringPlayback() {
     if (Math.abs(video.currentTime - desired) > 0.15) video.currentTime = desired;
   }
   updateActiveBlurOverlays();
+  updateActiveTextOverlays();
 }
 
 function updateActiveBlurOverlays() {
@@ -2225,6 +2227,26 @@ function updateActiveBlurOverlays() {
     applyBlurOverlayStyle(overlay, Timeline.blurEffectAt(clip, state.playhead));
   }
   syncBlurDialogFromClip();
+}
+
+function updateActiveTextOverlays() {
+  for (const overlay of elements.overlayStage.querySelectorAll(".text-overlay")) {
+    const clip = state.clips.find((candidate) => candidate.id === overlay.dataset.clipId);
+    if (!clip) continue;
+    const position = Timeline.textPositionAt(clip, state.playhead);
+    const keyframeCount = textKeyframeCount(clip);
+    overlay.style.left = `${position.x}%`;
+    overlay.style.top = `${position.y}%`;
+    overlay.classList.toggle("tracking", keyframeCount > 0);
+    overlay.classList.toggle("keyframe-now", textHasKeyframeAtPlayhead(clip));
+    if (keyframeCount > 0) {
+      overlay.dataset.keyframes =
+        `${keyframeCount} key${keyframeCount === 1 ? "" : "s"}` +
+        `${textHasKeyframeAtPlayhead(clip) ? " • current" : ""}`;
+    } else {
+      delete overlay.dataset.keyframes;
+    }
+  }
 }
 
 function openTextDialog(mode) {
