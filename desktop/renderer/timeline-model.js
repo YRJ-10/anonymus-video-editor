@@ -139,7 +139,71 @@
       color: /^#[0-9a-f]{6}$/i.test(color) ? color : "#ffffff",
       x: roundTime(clampNumber(x, 0, 100)),
       y: roundTime(clampNumber(y, 0, 100)),
+      keyframes: [],
     };
+  }
+
+  function normalizeTextKeyframes(keyframes, duration = 5, fallbackPosition = null) {
+    if (!Array.isArray(keyframes)) return [];
+    const maximum = Math.max(MIN_CLIP_DURATION, finiteNumber(Number(duration), 5));
+    const fallback = {
+      x: clampNumber(fallbackPosition?.x ?? 50, 0, 100),
+      y: clampNumber(fallbackPosition?.y ?? 50, 0, 100),
+    };
+    const byTime = new Map();
+    for (const keyframe of keyframes) {
+      const time = snapFrameTime(clampNumber(keyframe?.time, 0, maximum));
+      byTime.set(time, {
+        time,
+        x: roundTime(clampNumber(keyframe?.x ?? fallback.x, 0, 100)),
+        y: roundTime(clampNumber(keyframe?.y ?? fallback.y, 0, 100)),
+      });
+    }
+    return [...byTime.values()].sort((left, right) => left.time - right.time);
+  }
+
+  function interpolateTextPosition(left, right, ratio) {
+    const amount = clampNumber(ratio, 0, 1);
+    const lerp = (start, end) => start + (end - start) * amount;
+    return {
+      x: roundTime(clampNumber(lerp(left.x, right.x), 0, 100)),
+      y: roundTime(clampNumber(lerp(left.y, right.y), 0, 100)),
+    };
+  }
+
+  function textPositionAt(clip, timelineTime) {
+    const fallback = {
+      x: roundTime(clampNumber(clip?.x ?? 50, 0, 100)),
+      y: roundTime(clampNumber(clip?.y ?? 50, 0, 100)),
+    };
+    if (!clip || clip.type !== "text") return fallback;
+    const assetDuration = Math.max(
+      clip.sourceOut || 0,
+      clip.assetDuration || 0,
+      MIN_CLIP_DURATION,
+    );
+    const keyframes = normalizeTextKeyframes(clip.keyframes, assetDuration, fallback);
+    if (keyframes.length === 0) return fallback;
+
+    const sourceTime = snapFrameTime(
+      clampNumber(
+        clip.sourceIn + finiteNumber(Number(timelineTime), clip.start) - clip.start,
+        0,
+        assetDuration,
+      ),
+    );
+    if (sourceTime <= keyframes[0].time) return keyframes[0];
+    const last = keyframes[keyframes.length - 1];
+    if (sourceTime >= last.time) return last;
+    for (let index = 0; index < keyframes.length - 1; index += 1) {
+      const left = keyframes[index];
+      const right = keyframes[index + 1];
+      if (sourceTime >= left.time && sourceTime <= right.time) {
+        const span = Math.max(0.0001, right.time - left.time);
+        return interpolateTextPosition(left, right, (sourceTime - left.time) / span);
+      }
+    }
+    return fallback;
   }
 
   function normalizeBlurEffect(effect) {
@@ -409,8 +473,71 @@
             : changes.color,
         x: changes.x === undefined ? clip.x : roundTime(clampNumber(changes.x, 0, 100)),
         y: changes.y === undefined ? clip.y : roundTime(clampNumber(changes.y, 0, 100)),
+        keyframes: normalizeTextKeyframes(
+          changes.keyframes ?? clip.keyframes,
+          clip.sourceIn + duration,
+          { x: changes.x ?? clip.x, y: changes.y ?? clip.y },
+        ),
         sourceOut: roundTime(clip.sourceIn + duration),
         assetDuration: roundTime(clip.sourceIn + duration),
+      };
+    });
+  }
+
+  function updateTextClipAtTime(clips, clipId, timelineTime, changes) {
+    return updateClip(clips, clipId, (clip) => {
+      if (clip.type !== "text") return clip;
+      const assetDuration = Math.max(
+        clip.sourceOut || 0,
+        clip.assetDuration || 0,
+        MIN_CLIP_DURATION,
+      );
+      const sourceTime = snapFrameTime(
+        clampNumber(
+          clip.sourceIn + finiteNumber(Number(timelineTime), clip.start) - clip.start,
+          0,
+          assetDuration,
+        ),
+      );
+      const current = textPositionAt(clip, timelineTime);
+      const next = {
+        x: roundTime(clampNumber(changes.x ?? current.x, 0, 100)),
+        y: roundTime(clampNumber(changes.y ?? current.y, 0, 100)),
+      };
+      const keyframes = normalizeTextKeyframes(clip.keyframes, assetDuration, {
+        x: clip.x,
+        y: clip.y,
+      });
+      if (keyframes.length === 0) {
+        keyframes.push({
+          time: roundTime(clip.sourceIn),
+          x: roundTime(clampNumber(clip.x, 0, 100)),
+          y: roundTime(clampNumber(clip.y, 0, 100)),
+        });
+      }
+      const existing = keyframes.find((keyframe) => Math.abs(keyframe.time - sourceTime) <= 0.0334);
+      if (existing) {
+        existing.x = next.x;
+        existing.y = next.y;
+      } else {
+        keyframes.push({ time: sourceTime, ...next });
+      }
+      return {
+        ...clip,
+        keyframes: normalizeTextKeyframes(keyframes, assetDuration, next),
+      };
+    });
+  }
+
+  function clearTextKeyframes(clips, clipId, timelineTime) {
+    return updateClip(clips, clipId, (clip) => {
+      if (clip.type !== "text") return clip;
+      const position = textPositionAt(clip, finiteNumber(Number(timelineTime), clip.start));
+      return {
+        ...clip,
+        x: position.x,
+        y: position.y,
+        keyframes: [],
       };
     });
   }
@@ -554,6 +681,7 @@
     createTextClip,
     blurEffectAt,
     clearBlurKeyframes,
+    clearTextKeyframes,
     deleteClip,
     findClipAt,
     findClipsAt,
@@ -562,10 +690,12 @@
     normalizeTransform,
     normalizeBlurEffect,
     normalizeBlurKeyframes,
+    normalizeTextKeyframes,
     snapFrameTime,
     snapTime,
     splitClip,
     timelineEnd,
+    textPositionAt,
     trackEnd,
     trimClipLeft,
     trimClipRight,
@@ -575,5 +705,6 @@
     updateBlurClipAtTime,
     updateBlurClip,
     updateTextClip,
+    updateTextClipAtTime,
   });
 });

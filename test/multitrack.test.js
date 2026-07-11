@@ -69,6 +69,29 @@ test("text annotations normalize style, position, and duration", () => {
   assert.equal(updated[0].y, 75);
 });
 
+test("text keyframes interpolate manual tracking position", () => {
+  const text = Timeline.createTextClip({
+    id: "text",
+    text: "Track me",
+    trackId: "v2",
+    start: 10,
+    duration: 4,
+    x: 10,
+    y: 20,
+  });
+
+  let clips = Timeline.updateTextClipAtTime([text], "text", 10, { x: 10, y: 20 });
+  clips = Timeline.updateTextClipAtTime(clips, "text", 14, { x: 90, y: 60 });
+
+  assert.equal(clips[0].keyframes.length, 2);
+  assert.deepEqual(Timeline.textPositionAt(clips[0], 12), { x: 50, y: 40 });
+
+  const cleared = Timeline.clearTextKeyframes(clips, "text", 12);
+  assert.equal(cleared[0].keyframes.length, 0);
+  assert.equal(cleared[0].x, 50);
+  assert.equal(cleared[0].y, 40);
+});
+
 test("blur clips normalize censor region, strength, and duration", () => {
   const blur = Timeline.createBlurClip({
     id: "blur",

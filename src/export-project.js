@@ -12,7 +12,9 @@ const {
   normalizeBlurEffect,
   normalizeBlurKeyframes,
   normalizeColorAdjustment,
+  normalizeTextKeyframes,
   normalizeTransform,
+  textPositionAt,
 } = require("../desktop/renderer/timeline-model");
 
 const BLUR_TRACKING_SAFETY_PADDING_PX = 8;
@@ -180,6 +182,51 @@ function blurExpression(points, field) {
     return `if(lte(t\\,${filterNumber(next.time)})\\,${linear}\\,${build(index + 1)})`;
   };
   return build(0);
+}
+
+function textPositionExpression(points, field) {
+  if (points.length === 0) return "0";
+  const values = points.map((point) => ({
+    time: Number(point.time),
+    value: Number(point[field]) / 100,
+  }));
+  const build = (index) => {
+    const current = values[index];
+    if (index === 0) {
+      return `if(lte(t\\,${filterNumber(current.time)})\\,${filterNumber(current.value)}\\,${build(index + 1)})`;
+    }
+    if (index >= values.length - 1) return filterNumber(current.value);
+    const next = values[index + 1];
+    const span = Math.max(0.0001, next.time - current.time);
+    const linear =
+      `${filterNumber(current.value)}+(${filterNumber(next.value - current.value)})*` +
+      `(t-${filterNumber(current.time)})/${filterNumber(span)}`;
+    return `if(lte(t\\,${filterNumber(next.time)})\\,${linear}\\,${build(index + 1)})`;
+  };
+  return build(0);
+}
+
+function textPositionPointsForClip(clip) {
+  const duration = Math.max(clip.sourceOut || 0, clip.assetDuration || 0, clipDuration(clip));
+  const sourceStart = Number(clip.sourceIn) || 0;
+  const sourceEnd = Number(clip.sourceOut) || sourceStart + clipDuration(clip);
+  const keyframes = normalizeTextKeyframes(clip.keyframes, duration, {
+    x: clip.x,
+    y: clip.y,
+  });
+  return [
+    { time: Number(clip.start), ...textPositionAt(clip, Number(clip.start)) },
+    ...keyframes
+      .filter((keyframe) => keyframe.time >= sourceStart && keyframe.time <= sourceEnd)
+      .map((keyframe) => ({
+        time: Number(clip.start) + (keyframe.time - sourceStart),
+        x: keyframe.x,
+        y: keyframe.y,
+      })),
+    { time: clipEnd(clip), ...textPositionAt(clip, clipEnd(clip)) },
+  ]
+    .sort((left, right) => left.time - right.time)
+    .filter((point, index, list) => index === 0 || Math.abs(point.time - list[index - 1].time) > 0.0001);
 }
 
 function trackedBlurRegionForClip(canvas, clip) {
@@ -457,8 +504,9 @@ async function buildExportPlan(project, temporaryPaths) {
     const textFile = path.join(temporaryPaths.supportDirectory, `text-${index}.txt`);
     fs.writeFileSync(textFile, clip.text, "utf8");
     const nextVideo = `textComposite${index + 1}`;
-    const x = Math.min(100, Math.max(0, Number(clip.x))) / 100;
-    const y = Math.min(100, Math.max(0, Number(clip.y))) / 100;
+    const points = textPositionPointsForClip(clip);
+    const x = textPositionExpression(points, "x");
+    const y = textPositionExpression(points, "y");
     const color = /^#[0-9a-f]{6}$/i.test(clip.color)
       ? `0x${clip.color.slice(1)}`
       : "0xFFFFFF";
@@ -466,7 +514,7 @@ async function buildExportPlan(project, temporaryPaths) {
       `[${currentVideo}]drawtext=fontfile='${escapeFilterPath(fontFile)}':` +
         `textfile='${escapeFilterPath(textFile)}':reload=0:expansion=none:` +
         `fontsize=${Math.round(Number(clip.fontSize) || 48)}:fontcolor=${color}:` +
-        `x=(w-text_w)*${filterNumber(x)}:y=(h-text_h)*${filterNumber(y)}:` +
+        `x=(w-text_w)*(${x}):y=(h-text_h)*(${y}):` +
         `enable='between(t,${filterNumber(clip.start)},${filterNumber(clipEnd(clip))})'` +
         `[${nextVideo}]`,
     );

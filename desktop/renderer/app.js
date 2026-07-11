@@ -63,6 +63,8 @@ const elements = {
   addToTimeline: document.querySelector("#add-to-timeline"),
   addText: document.querySelector("#add-text"),
   editText: document.querySelector("#edit-text"),
+  addTextKeyframe: document.querySelector("#add-text-keyframe"),
+  clearTextKeyframes: document.querySelector("#clear-text-keyframes"),
   addBlur: document.querySelector("#add-blur"),
   editBlur: document.querySelector("#edit-blur"),
   addTrack: document.querySelector("#add-track"),
@@ -746,6 +748,15 @@ function selectedBlurClip() {
   return clip?.type === "blur" ? clip : null;
 }
 
+function selectedTextClip() {
+  const clip = selectedClip();
+  return clip?.type === "text" ? clip : null;
+}
+
+function textHasKeyframes(clip) {
+  return Array.isArray(clip?.keyframes) && clip.keyframes.length > 0;
+}
+
 function blurTrackingCount(clip) {
   return Array.isArray(clip?.keyframes) ? clip.keyframes.length : 0;
 }
@@ -1211,6 +1222,11 @@ function updateTimelineControls() {
   elements.splitClip.disabled = !canSplit;
   elements.deleteClip.disabled = !clip && !selectedAsset();
   elements.editText.disabled = clip?.type !== "text";
+  elements.addTextKeyframe.disabled =
+    clip?.type !== "text" ||
+    state.playhead < clip.start ||
+    state.playhead >= Timeline.clipEnd(clip);
+  elements.clearTextKeyframes.disabled = clip?.type !== "text" || !textHasKeyframes(clip);
   elements.editBlur.disabled = clip?.type !== "blur";
   elements.timelineTimecode.textContent = formatTimelineTime(state.playhead);
   updateAudioControls();
@@ -1731,8 +1747,35 @@ function updateTextPosition(event) {
   if (rect.width <= 0 || rect.height <= 0) return;
   const x = ((event.clientX - rect.left) / rect.width) * 100;
   const y = ((event.clientY - rect.top) / rect.height) * 100;
-  state.clips = Timeline.updateTextClip(state.clips, state.textDrag.clipId, { x, y });
+  const clip = state.clips.find((candidate) => candidate.id === state.textDrag.clipId);
+  state.clips = textHasKeyframes(clip)
+    ? Timeline.updateTextClipAtTime(state.clips, state.textDrag.clipId, state.playhead, {
+        x,
+        y,
+      })
+    : Timeline.updateTextClip(state.clips, state.textDrag.clipId, { x, y });
   renderComposition();
+}
+
+function addSelectedTextKeyframe() {
+  const clip = selectedTextClip();
+  if (!clip || state.playhead < clip.start || state.playhead >= Timeline.clipEnd(clip)) return;
+  const position = Timeline.textPositionAt(clip, state.playhead);
+  state.clips = Timeline.updateTextClipAtTime(state.clips, clip.id, state.playhead, position);
+  renderTimeline();
+  renderComposition();
+  commitEdit();
+  showStatus("Text keyframe added");
+}
+
+function clearSelectedTextKeyframes() {
+  const clip = selectedTextClip();
+  if (!clip || !textHasKeyframes(clip)) return;
+  state.clips = Timeline.clearTextKeyframes(state.clips, clip.id, state.playhead);
+  renderTimeline();
+  renderComposition();
+  commitEdit();
+  showStatus("Text keyframes cleared");
 }
 
 function evenSpan(value, maximum) {
@@ -2018,8 +2061,10 @@ function renderComposition() {
       text.className = "text-overlay";
       text.classList.toggle("selected", clip.id === state.selectedClipId);
       text.textContent = clip.text;
-      text.style.left = `${clip.x}%`;
-      text.style.top = `${clip.y}%`;
+      text.classList.toggle("tracking", textHasKeyframes(clip));
+      const position = Timeline.textPositionAt(clip, state.playhead);
+      text.style.left = `${position.x}%`;
+      text.style.top = `${position.y}%`;
       text.style.color = clip.color;
       const previewHeight = elements.compositionSurface.clientHeight || 540;
       text.style.fontSize =
@@ -2618,6 +2663,8 @@ elements.copyClip.addEventListener("click", copySelectedClip);
 elements.pasteClip.addEventListener("click", pasteClipboardClip);
 elements.addText.addEventListener("click", () => openTextDialog("add"));
 elements.editText.addEventListener("click", () => openTextDialog("edit"));
+elements.addTextKeyframe.addEventListener("click", addSelectedTextKeyframe);
+elements.clearTextKeyframes.addEventListener("click", clearSelectedTextKeyframes);
 elements.closeTextDialog.addEventListener("click", () => elements.textDialog.close());
 elements.cancelText.addEventListener("click", () => elements.textDialog.close());
 elements.textForm.addEventListener("submit", (event) => {

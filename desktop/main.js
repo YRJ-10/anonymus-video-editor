@@ -128,6 +128,8 @@ function createWindow() {
               document.querySelector(".top-actions > .canvas-switch") &&
               document.querySelector(".text-controls #add-text") &&
               document.querySelector(".text-controls #edit-text") &&
+              document.querySelector(".text-controls #add-text-keyframe") &&
+              document.querySelector(".text-controls #clear-text-keyframes") &&
               document.querySelector("#preview-fullscreen") &&
               typeof window.TimelineModel?.snapTime === "function"
             ),

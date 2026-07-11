@@ -4,6 +4,7 @@ const {
   normalizeBlurEffect,
   normalizeBlurKeyframes,
   normalizeColorAdjustment,
+  normalizeTextKeyframes,
   normalizeTransform,
 } = require("./renderer/timeline-model");
 
@@ -103,6 +104,11 @@ function normalizeProject(input) {
       normalized.color = /^#[0-9a-f]{6}$/i.test(clip.color) ? clip.color : "#ffffff";
       normalized.x = Math.min(100, Math.max(0, finite(clip.x, 50)));
       normalized.y = Math.min(100, Math.max(0, finite(clip.y, 50)));
+      normalized.keyframes = normalizeTextKeyframes(
+        clip.keyframes,
+        normalized.assetDuration,
+        { x: normalized.x, y: normalized.y },
+      );
     } else if (type === "audio") {
       normalized.volume = Math.min(2, Math.max(0, finite(clip.volume, 1)));
       normalized.muted = Boolean(clip.muted);

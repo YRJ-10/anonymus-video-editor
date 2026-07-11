@@ -132,6 +132,10 @@ test("project export composites tracks and text, then passes strict privacy veri
         color: "#ffffff",
         x: 50,
         y: 50,
+        keyframes: [
+          { time: 0, x: 20, y: 30 },
+          { time: 0.8, x: 80, y: 70 },
+        ],
       },
       {
         id: "blur",
@@ -174,6 +178,7 @@ test("project export composites tracks and text, then passes strict privacy veri
   );
   assert.match(plan.filterGraph, /crop=w=554:h=254:x='if\(lte\(t\\,/);
   assert.match(plan.filterGraph, /overlay=x='if\(lte\(t\\,/);
+  assert.match(plan.filterGraph, /drawtext=.*x=\(w-text_w\)\*\(if\(lte\(t\\,/);
 
   const progress = [];
   const result = await exportProject(project, outputFile, {

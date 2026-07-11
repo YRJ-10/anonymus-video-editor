@@ -593,6 +593,11 @@ button {
   background: rgba(0, 0, 0, 0.15);
 }
 
+.text-overlay.tracking {
+  outline: 1px dashed rgba(255, 210, 118, 0.82);
+  outline-offset: 3px;
+}
+
 .blur-overlay {
   position: absolute;
   border: 1px solid rgba(116, 235, 177, 0.9);

@@ -208,6 +208,43 @@ test("project files preserve media color adjustment", () => {
   });
 });
 
+test("project files preserve text keyframes", () => {
+  const project = {
+    format: PROJECT_FORMAT,
+    version: PROJECT_VERSION,
+    assets: [],
+    tracks: [{ id: "v1", name: "V1", kind: "video" }],
+    clips: [
+      {
+        id: "text",
+        assetPath: null,
+        assetName: "Moving",
+        type: "text",
+        trackId: "v1",
+        start: 0,
+        sourceIn: 0,
+        sourceOut: 5,
+        assetDuration: 5,
+        text: "Moving",
+        fontSize: 48,
+        color: "#ffffff",
+        x: 20,
+        y: 30,
+        keyframes: [
+          { time: 0, x: 20, y: 30 },
+          { time: 5, x: 80, y: 70 },
+        ],
+      },
+    ],
+    activeTrackId: "v1",
+  };
+
+  const parsed = parseProject(serializeProject(project));
+  assert.equal(parsed.clips[0].keyframes.length, 2);
+  assert.equal(parsed.clips[0].keyframes[1].x, 80);
+  assert.equal(parsed.clips[0].keyframes[1].y, 70);
+});
+
 test("project files preserve manual blur clips without media assets", () => {
   const project = {
     format: PROJECT_FORMAT,
