@@ -273,7 +273,7 @@ button {
   flex-direction: column;
   z-index: 50;
   min-width: 120px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .asset-dropdown.hidden {
@@ -292,6 +292,14 @@ button {
 
 .asset-dropdown button:hover {
   background: #6557d6;
+}
+
+.asset-dropdown button:first-child {
+  border-radius: 3px 3px 0 0;
+}
+
+.asset-dropdown button:last-child {
+  border-radius: 0 0 3px 3px;
 }
 
 .asset-card:hover {
@@ -1446,7 +1454,7 @@ kbd {
 
 .playhead {
   position: absolute;
-  z-index: 10;
+  z-index: 30;
   top: 0;
   bottom: 0;
   width: 1px;

@@ -1131,27 +1131,19 @@ function renderAssets() {
     });
 
     const subMenu = document.createElement("div");
-    subMenu.className = "asset-submenu hidden";
-    subMenu.style.position = "absolute";
-    subMenu.style.right = "100%";
-    subMenu.style.top = "0";
-    subMenu.style.background = "#2a2c33";
-    subMenu.style.border = "1px solid #454752";
-    subMenu.style.borderRadius = "4px";
-    subMenu.style.padding = "4px 0";
-    subMenu.style.minWidth = "120px";
-    subMenu.style.zIndex = "1000";
+    subMenu.className = "asset-submenu";
+    subMenu.style.display = "none";
+    subMenu.style.flexDirection = "column";
+    subMenu.style.background = "#15161a";
+    subMenu.style.borderTop = "1px solid #2a2c33";
+    subMenu.style.borderBottom = "1px solid #2a2c33";
 
     const addToBtn = document.createElement("button");
-    addToBtn.textContent = "Add to ◀";
-    addToBtn.style.position = "relative";
+    addToBtn.textContent = "Add to ▼";
 
-    addToBtn.addEventListener("mouseenter", () => {
-      subMenu.classList.remove("hidden");
-    });
-
-    menuContainer.addEventListener("mouseleave", () => {
-      subMenu.classList.add("hidden");
+    addToBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      subMenu.style.display = subMenu.style.display === "none" ? "flex" : "none";
     });
 
     const isAudio = asset.type === "audio";
@@ -1164,21 +1156,26 @@ function renderAssets() {
         e.stopPropagation();
         insertAssetToTrack(asset, track.id);
         dropdown.classList.add("hidden");
-        subMenu.classList.add("hidden");
+        subMenu.style.display = "none";
       });
       subMenu.append(trackBtn);
     }
 
-    addToBtn.append(subMenu);
-    dropdown.append(addToBtn, delBtn);
+    dropdown.append(addToBtn, subMenu, delBtn);
 
     menuBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       dropdown.classList.toggle("hidden");
+      if (dropdown.classList.contains("hidden")) {
+        subMenu.style.display = "none";
+      }
     });
 
     document.addEventListener("click", (e) => {
-      if (!menuContainer.contains(e.target)) dropdown.classList.add("hidden");
+      if (!menuContainer.contains(e.target)) {
+        dropdown.classList.add("hidden");
+        subMenu.style.display = "none";
+      }
     });
 
     menuContainer.append(menuBtn, dropdown);
