@@ -98,9 +98,20 @@ function escapeFilterPath(filePath) {
 function findSystemFont() {
   const candidates = [
     process.env.WINDIR && path.join(process.env.WINDIR, "Fonts", "arial.ttf"),
+    process.env.WINDIR && path.join(process.env.WINDIR, "Fonts", "segoeui.ttf"),
+    process.env.WINDIR && path.join(process.env.WINDIR, "Fonts", "consola.ttf"),
     "C:\\Windows\\Fonts\\arial.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "C:\\Windows\\Fonts\\segoeui.ttf",
+    "C:\\Windows\\Fonts\\consola.ttf",
     "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/Library/Fonts/Arial.ttf",
+    "/System/Library/Fonts/Helvetica.ttc",
+    "/System/Library/Fonts/PingFang.ttc",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+    "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
   ].filter(Boolean);
   return candidates.find((candidate) => fs.existsSync(candidate)) || null;
 }
@@ -596,14 +607,18 @@ async function exportProject(project, outputPath, options = {}) {
   const temporaryPaths = makeTemporaryPaths(output);
   const plan = await buildExportPlan(project, temporaryPaths);
   const quality = exportQualityPreset(options.quality);
+  
+  const filterScriptPath = path.join(temporaryPaths.supportDirectory, "filter_complex.txt");
+  fs.writeFileSync(filterScriptPath, plan.filterGraph, "utf8");
+
   const args = [
     "-hide_banner",
     "-loglevel",
     "error",
     "-y",
     ...plan.inputArgs,
-    "-filter_complex",
-    plan.filterGraph,
+    "-filter_complex_script",
+    filterScriptPath,
     "-map",
     "[vout]",
     "-map",

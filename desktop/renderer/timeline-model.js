@@ -28,7 +28,7 @@
   }
 
   function clipEnd(clip) {
-    return clip.start + clipDuration(clip);
+    return roundTime(clip.start + clipDuration(clip));
   }
 
   function snapTime(time, pixelsPerSecond, gridSeconds = 1, thresholdPixels = 8) {
@@ -38,6 +38,56 @@
     const threshold = Math.min(0.2, Math.max(0, thresholdPixels) / pixels);
     const snapped = Math.round(value / grid) * grid;
     return Math.abs(snapped - value) <= threshold ? roundTime(snapped) : roundTime(value);
+  }
+
+  function smartSnapTime(time, pixelsPerSecond, clips = [], playhead = -1, thresholdPixels = 8, gridSeconds = 1) {
+    const value = Math.max(0, finiteNumber(time));
+    const pixels = Math.max(0.01, finiteNumber(pixelsPerSecond, 1));
+    const threshold = Math.min(0.2, Math.max(0, thresholdPixels) / pixels);
+    
+    const magneticPoints = new Set();
+    if (finiteNumber(playhead, -1) >= 0) magneticPoints.add(roundTime(playhead));
+    
+    for (const clip of clips) {
+      magneticPoints.add(roundTime(clip.start));
+      magneticPoints.add(roundTime(clipEnd(clip)));
+    }
+    
+    let bestSnap = null;
+    let minDistance = Infinity;
+    
+    for (const point of magneticPoints) {
+      const distance = Math.abs(point - value);
+      if (distance <= threshold && distance < minDistance) {
+        minDistance = distance;
+        bestSnap = point;
+      }
+    }
+    
+    if (bestSnap !== null) return bestSnap;
+    
+    const grid = Math.max(0.001, finiteNumber(gridSeconds, 1));
+    const snapped = Math.round(value / grid) * grid;
+    return Math.abs(snapped - value) <= threshold ? roundTime(snapped) : roundTime(value);
+  }
+
+  function enforceMagneticV1(clips) {
+    const v1Clips = clips.filter((clip) => clip.trackId === "v1");
+    if (v1Clips.length === 0) return clips;
+    v1Clips.sort((a, b) => a.start - b.start);
+    let cursor = 0;
+    const v1Updates = new Map();
+    for (const clip of v1Clips) {
+      if (clip.start !== cursor) {
+        v1Updates.set(clip.id, roundTime(cursor));
+      }
+      cursor += Math.max(MIN_CLIP_DURATION, clipDuration(clip));
+    }
+    if (v1Updates.size === 0) return clips;
+    return clips.map((clip) => {
+      if (v1Updates.has(clip.id)) return { ...clip, start: v1Updates.get(clip.id) };
+      return clip;
+    });
   }
 
   function normalizeTransform(transform, trackId = "v1") {
@@ -356,25 +406,34 @@
   }
 
   function appendClip(clips, clip) {
-    return [...clips, { ...clip, start: roundTime(trackEnd(clips, clip.trackId)) }];
+    const next = [...clips, { ...clip, start: roundTime(trackEnd(clips, clip.trackId)) }];
+    return enforceMagneticV1(next);
   }
 
-  function updateClip(clips, clipId, updater) {
-    return clips.map((clip) => (clip.id === clipId ? updater({ ...clip }) : clip));
+  function updateClip(clips, clipId, updater, magnetic = true) {
+    const next = clips.map((clip) => (clip.id === clipId ? updater({ ...clip }) : clip));
+    return magnetic ? enforceMagneticV1(next) : next;
   }
 
-  function moveClip(clips, clipId, requestedStart, requestedTrackId) {
-    return updateClip(clips, clipId, (clip) => ({
-      ...clip,
-      trackId: requestedTrackId || clip.trackId,
-      start: roundTime(Math.max(0, finiteNumber(requestedStart))),
-    }));
+  function moveClip(clips, clipId, requestedStart, requestedTrackId, magnetic = true) {
+    return updateClip(
+      clips,
+      clipId,
+      (clip) => ({
+        ...clip,
+        trackId: requestedTrackId || clip.trackId,
+        start: roundTime(Math.max(0, finiteNumber(requestedStart))),
+      }),
+      magnetic
+    );
   }
 
-  function trimClipLeft(clips, clipId, requestedStart) {
+  function trimClipLeft(clips, clipId, requestedStart, magnetic = true) {
     return updateClip(clips, clipId, (clip) => {
       const end = clipEnd(clip);
-      const earliestStart = Math.max(0, clip.start - clip.sourceIn);
+      const earliestStart = clip.trackId === "v1" 
+        ? clip.start - clip.sourceIn 
+        : Math.max(0, clip.start - clip.sourceIn);
       const latestStart = end - MIN_CLIP_DURATION;
       const nextStart = Math.min(
         latestStart,
@@ -390,7 +449,7 @@
     });
   }
 
-  function trimClipRight(clips, clipId, requestedEnd) {
+  function trimClipRight(clips, clipId, requestedEnd, magnetic = true) {
     return updateClip(clips, clipId, (clip) => {
       const earliestEnd = clip.start + MIN_CLIP_DURATION;
       const latestEnd = clip.start + (clip.assetDuration - clip.sourceIn);
@@ -431,11 +490,11 @@
     const index = clips.findIndex((candidate) => candidate.id === clipId);
     const next = clips.slice();
     next.splice(index, 1, left, right);
-    return { clips: next, rightId: newId };
+    return { clips: enforceMagneticV1(next), rightId: newId };
   }
 
   function deleteClip(clips, clipId) {
-    return clips.filter((clip) => clip.id !== clipId);
+    return enforceMagneticV1(clips.filter((clip) => clip.id !== clipId));
   }
 
   function findClipAt(clips, timelineTime) {
@@ -683,6 +742,7 @@
     clearBlurKeyframes,
     clearTextKeyframes,
     deleteClip,
+    enforceMagneticV1,
     findClipAt,
     findClipsAt,
     moveClip,
@@ -691,6 +751,7 @@
     normalizeBlurEffect,
     normalizeBlurKeyframes,
     normalizeTextKeyframes,
+    smartSnapTime,
     snapFrameTime,
     snapTime,
     splitClip,

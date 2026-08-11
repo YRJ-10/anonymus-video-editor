@@ -1014,11 +1014,14 @@ function updatePlayback(media = playbackElement()) {
 
 function applyPendingVideoSeek() {
   if (!Number.isFinite(state.pendingVideoSeek) || elements.video.readyState < 1) return;
-  elements.video.currentTime = clamp(
+  const target = clamp(
     state.pendingVideoSeek,
     0,
     elements.video.duration || state.pendingVideoSeek,
   );
+  if (Math.abs(elements.video.currentTime - target) > 0.05) {
+    elements.video.currentTime = target;
+  }
   state.pendingVideoSeek = null;
   updatePlayback();
 }
@@ -1667,6 +1670,7 @@ function handleTimelinePointerMove(event) {
   }
 
   const delta = (event.clientX - drag.startX) / state.pixelsPerSecond;
+  const otherClips = state.clips.filter(c => c.id !== drag.clipId);
   if (drag.mode === "move") {
     const lane = document.elementFromPoint(event.clientX, event.clientY)?.closest(".track-lane");
     const requestedTrackId = lane?.dataset.trackId;
@@ -1677,11 +1681,11 @@ function handleTimelinePointerMove(event) {
         : drag.baseClip.trackId;
     const rawStart = drag.baseClip.start + delta;
     let targetStart = state.timelineSnapEnabled
-      ? Timeline.snapTime(rawStart, state.pixelsPerSecond)
+      ? Timeline.smartSnapTime(rawStart, state.pixelsPerSecond, otherClips, state.playhead)
       : rawStart;
     if (state.timelineSnapEnabled && Math.abs(targetStart - rawStart) < 0.00005) {
       const rawEnd = rawStart + Timeline.clipDuration(drag.baseClip);
-      const snappedEnd = Timeline.snapTime(rawEnd, state.pixelsPerSecond);
+      const snappedEnd = Timeline.smartSnapTime(rawEnd, state.pixelsPerSecond, otherClips, state.playhead);
       if (snappedEnd !== rawEnd) targetStart = snappedEnd - Timeline.clipDuration(drag.baseClip);
     }
     state.activeTrackId = targetTrackId;
@@ -1690,6 +1694,7 @@ function handleTimelinePointerMove(event) {
       drag.clipId,
       targetStart,
       targetTrackId,
+      false
     );
   } else if (drag.mode === "trim-left") {
     const targetTime = drag.baseClip.start + delta;
@@ -1697,8 +1702,9 @@ function handleTimelinePointerMove(event) {
       drag.baseClips,
       drag.clipId,
       state.timelineSnapEnabled
-        ? Timeline.snapTime(targetTime, state.pixelsPerSecond)
+        ? Timeline.smartSnapTime(targetTime, state.pixelsPerSecond, otherClips, state.playhead)
         : targetTime,
+      false
     );
   } else if (drag.mode === "trim-right") {
     const targetTime = Timeline.clipEnd(drag.baseClip) + delta;
@@ -1706,8 +1712,9 @@ function handleTimelinePointerMove(event) {
       drag.baseClips,
       drag.clipId,
       state.timelineSnapEnabled
-        ? Timeline.snapTime(targetTime, state.pixelsPerSecond)
+        ? Timeline.smartSnapTime(targetTime, state.pixelsPerSecond, otherClips, state.playhead)
         : targetTime,
+      false
     );
   }
 
@@ -1719,6 +1726,7 @@ function endTimelineDrag() {
   if (!state.timelineDrag) return;
   const completedDrag = state.timelineDrag;
   state.timelineDrag = null;
+  state.clips = Timeline.enforceMagneticV1(state.clips);
   renderTimeline();
   renderComposition();
   if (completedDrag.mode !== "playhead") commitEdit();
@@ -1738,6 +1746,14 @@ function overlayVideos() {
 
 function pauseOverlayVideos() {
   for (const video of overlayVideos()) video.pause();
+}
+
+function clearOverlayVideos() {
+  for (const video of overlayVideos()) {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  }
 }
 
 async function playOverlayVideos() {
@@ -1998,6 +2014,7 @@ function renderComposition() {
   elements.audio.pause();
   elements.audio.removeAttribute("src");
   elements.audio.classList.remove("visible");
+  const oldOverlays = [...elements.overlayStage.children];
   elements.overlayStage.replaceChildren();
 
   if (baseClip) {
@@ -2116,6 +2133,21 @@ function renderComposition() {
     if (clip.type === "audio") {
       const asset = assetForClip(clip);
       if (!asset) continue;
+      let audioLayer = oldOverlays.find((o) => o.dataset.clipId === clip.id);
+      if (!audioLayer) {
+        audioLayer = oldOverlays.find((o) => {
+          const oldClip = state.clips.find((c) => c.id === o.dataset.clipId);
+          return oldClip && oldClip.assetPath === clip.assetPath && Math.abs(Timeline.clipEnd(oldClip) - clip.start) < 0.05;
+        });
+        if (audioLayer) audioLayer.dataset.clipId = clip.id;
+      }
+
+      if (audioLayer) {
+        elements.overlayStage.append(audioLayer);
+        oldOverlays.splice(oldOverlays.indexOf(audioLayer), 1);
+        continue;
+      }
+
       const audio = document.createElement("audio");
       audio.className = "composition-audio";
       audio.dataset.clipId = clip.id;
@@ -2162,23 +2194,44 @@ function renderComposition() {
     if (clip.id === baseClip?.id) continue;
     const asset = assetForClip(clip);
     if (!asset) continue;
-    const layer = document.createElement(asset.type === "video" ? "video" : "img");
-    layer.className = "composition-overlay";
-    layer.dataset.clipId = clip.id;
-    layer.style.zIndex = String(zIndex);
-    layer.src = asset.url;
-    applyMediaClipStyle(layer, clip);
+    let layer = oldOverlays.find((o) => o.dataset.clipId === clip.id);
+    if (!layer) {
+      layer = oldOverlays.find((o) => {
+        const oldClip = state.clips.find((c) => c.id === o.dataset.clipId);
+        return oldClip && oldClip.assetPath === clip.assetPath && Math.abs(Timeline.clipEnd(oldClip) - clip.start) < 0.05;
+      });
+      if (layer) layer.dataset.clipId = clip.id;
+    }
+
+    if (layer) {
+      layer.style.zIndex = String(zIndex);
+      applyMediaClipStyle(layer, clip);
+      if (asset.type === "video") {
+        layer.muted = Boolean(clip.audioDetached || clip.muted);
+        layer.volume = clamp(clip.volume ?? 1, 0, 1);
+      }
+      elements.overlayStage.append(layer);
+      oldOverlays.splice(oldOverlays.indexOf(layer), 1);
+      continue;
+    }
+
+    const layerNew = document.createElement(asset.type === "video" ? "video" : "img");
+    layerNew.className = "composition-overlay";
+    layerNew.dataset.clipId = clip.id;
+    layerNew.style.zIndex = String(zIndex);
+    layerNew.src = asset.url;
+    applyMediaClipStyle(layerNew, clip);
 
     if (asset.type === "video") {
-      layer.muted = Boolean(clip.audioDetached || clip.muted);
-      layer.volume = clamp(clip.volume ?? 1, 0, 1);
-      layer.preload = "auto";
+      layerNew.muted = Boolean(clip.audioDetached || clip.muted);
+      layerNew.volume = clamp(clip.volume ?? 1, 0, 1);
+      layerNew.preload = "auto";
       const sourceTime = clip.sourceIn + (state.playhead - clip.start);
-      layer.addEventListener("loadedmetadata", async () => {
-        layer.currentTime = clamp(sourceTime, 0, layer.duration || sourceTime);
+      layerNew.addEventListener("loadedmetadata", async () => {
+        layerNew.currentTime = clamp(sourceTime, 0, layerNew.duration || sourceTime);
         if (!elements.video.paused) {
           try {
-            await layer.play();
+            await layerNew.play();
           } catch {
             // The base video remains authoritative if an overlay cannot autoplay.
           }
@@ -2186,7 +2239,13 @@ function renderComposition() {
       });
     }
 
-    elements.overlayStage.append(layer);
+    elements.overlayStage.append(layerNew);
+  }
+
+  for (const old of oldOverlays) {
+    if (old.pause) old.pause();
+    if (old.removeAttribute) old.removeAttribute("src");
+    if (old.load) old.load();
   }
 
   if (baseClip?.type === "video") updatePlayback();
