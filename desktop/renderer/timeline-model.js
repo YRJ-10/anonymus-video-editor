@@ -509,7 +509,7 @@
         start: roundTime(nextStart),
         sourceIn: roundTime(clip.sourceIn + delta),
       };
-    });
+    }, magnetic);
   }
 
   function trimClipRight(clips, clipId, requestedEnd, magnetic = true) {
@@ -525,7 +525,7 @@
         ...clip,
         sourceOut: roundTime(clip.sourceIn + (nextEnd - clip.start)),
       };
-    });
+    }, magnetic);
   }
 
   function splitClip(clips, clipId, timelineTime, newId) {

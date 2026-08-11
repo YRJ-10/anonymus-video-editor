@@ -1,7 +1,12 @@
 :root {
   color-scheme: dark;
   font-family:
-    Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    Inter,
+    "Segoe UI",
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
   background: #101114;
   color: #f2f3f5;
   font-synthesis: none;
@@ -38,7 +43,11 @@ button {
   width: 100%;
   height: 100%;
   background:
-    radial-gradient(circle at 50% -30%, rgba(120, 88, 255, 0.1), transparent 38%),
+    radial-gradient(
+      circle at 50% -30%,
+      rgba(120, 88, 255, 0.1),
+      transparent 38%
+    ),
     #101114;
 }
 
@@ -214,17 +223,75 @@ button {
 }
 
 .asset-card {
-  display: grid;
-  grid-template-columns: 35px minmax(0, 1fr);
+  display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
   width: 100%;
   padding: 9px;
   border: 1px solid transparent;
   border-radius: 8px;
   background: #1b1c21;
   text-align: left;
+}
+
+.asset-main-area {
+  display: grid;
+  grid-template-columns: 35px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  flex: 1;
   cursor: pointer;
+}
+
+.asset-menu-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.asset-menu-btn {
+  background: transparent;
+  border: none;
+  color: #8c8c94;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 5px;
+}
+
+.asset-menu-btn:hover {
+  color: #fff;
+}
+
+.asset-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: #202127;
+  border: 1px solid #3a3a40;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+  min-width: 120px;
+  overflow: hidden;
+}
+
+.asset-dropdown.hidden {
+  display: none;
+}
+
+.asset-dropdown button {
+  background: transparent;
+  border: none;
+  color: #fff;
+  padding: 8px 12px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.asset-dropdown button:hover {
+  background: #6557d6;
 }
 
 .asset-card:hover {
@@ -480,13 +547,55 @@ button {
 }
 
 .preview-fullscreen-button:hover {
-  border-color: #6255cb;
-  background: #29263d;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+}
+
+.fullscreen-controls {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80%;
+  max-width: 800px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  border-radius: 8px;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  z-index: 100;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.preview-viewport:hover .fullscreen-controls {
+  opacity: 1;
+}
+
+.fullscreen-controls span {
+  color: #fff;
+  font-family: monospace;
+  font-size: 14px;
+}
+
+#fullscreen-progress {
+  flex: 1;
+  cursor: pointer;
+  accent-color: #ff657a;
 }
 
 .preview-viewport:fullscreen {
   width: 100vw;
   height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.preview-viewport:fullscreen .composition-surface {
+  box-shadow: none;
 }
 
 .preview-viewport.dragging {
@@ -679,8 +788,11 @@ button {
 .blur-export-safe {
   position: absolute;
   border: 2px solid rgba(255, 196, 87, 0.92);
-  background:
-    linear-gradient(135deg, rgba(255, 196, 87, 0.1), rgba(255, 137, 87, 0.05));
+  background: linear-gradient(
+    135deg,
+    rgba(255, 196, 87, 0.1),
+    rgba(255, 137, 87, 0.05)
+  );
   box-shadow:
     inset 0 0 22px rgba(255, 255, 255, 0.1),
     0 0 0 1px rgba(0, 0, 0, 0.52),
@@ -1136,7 +1248,9 @@ kbd {
 }
 
 .timeline-ruler {
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 20;
   height: 28px;
   border-bottom: 1px solid #292b32;
   background: #15161a;
@@ -1343,7 +1457,7 @@ kbd {
 
 .playhead::before {
   position: absolute;
-  top: 0;
+  top: var(--scroll-top, 0px);
   left: -5px;
   width: 11px;
   height: 9px;
@@ -1804,7 +1918,11 @@ kbd {
 
 .privacy-pass {
   border-color: rgba(111, 255, 191, 0.6);
-  background: linear-gradient(135deg, rgba(37, 151, 96, 0.78), rgba(34, 104, 79, 0.55));
+  background: linear-gradient(
+    135deg,
+    rgba(37, 151, 96, 0.78),
+    rgba(34, 104, 79, 0.55)
+  );
   color: #ffffff;
   text-transform: uppercase;
   letter-spacing: 0.03em;
