@@ -323,6 +323,69 @@
     }
     return fallback;
   }
+  function normalizeMediaKeyframes(keyframes, duration = 5, fallbackTransform = null, trackId = "v1") {
+    if (!Array.isArray(keyframes)) return [];
+    const maximum = Math.max(MIN_CLIP_DURATION, finiteNumber(Number(duration), 5));
+    const fallback = normalizeTransform(fallbackTransform, trackId);
+    const byTime = new Map();
+    for (const keyframe of keyframes) {
+      const time = snapFrameTime(clampNumber(keyframe?.time, 0, maximum));
+      byTime.set(time, {
+        time,
+        transform: normalizeTransform(keyframe?.transform ?? fallback, trackId),
+      });
+    }
+    return [...byTime.values()].sort((left, right) => left.time - right.time);
+  }
+
+  function interpolateMediaTransform(left, right, ratio, trackId = "v1") {
+    const amount = clampNumber(ratio, 0, 1);
+    const lerp = (start, end) => start + (end - start) * amount;
+    return normalizeTransform({
+      x: lerp(left.transform.x, right.transform.x),
+      y: lerp(left.transform.y, right.transform.y),
+      scale: lerp(left.transform.scale, right.transform.scale),
+      fitMode: left.transform.fitMode,
+      crop: {
+        left: lerp(left.transform.crop.left, right.transform.crop.left),
+        right: lerp(left.transform.crop.right, right.transform.crop.right),
+        top: lerp(left.transform.crop.top, right.transform.crop.top),
+        bottom: lerp(left.transform.crop.bottom, right.transform.crop.bottom),
+      }
+    }, trackId);
+  }
+
+  function mediaTransformAt(clip, timelineTime) {
+    const fallback = normalizeTransform(clip?.transform, clip?.trackId || "v1");
+    if (!clip || !["video", "image"].includes(clip.type)) return fallback;
+    const assetDuration = Math.max(
+      clip.sourceOut || 0,
+      clip.assetDuration || 0,
+      MIN_CLIP_DURATION,
+    );
+    const keyframes = normalizeMediaKeyframes(clip.keyframes, assetDuration, fallback, clip.trackId);
+    if (keyframes.length === 0) return fallback;
+
+    const sourceTime = snapFrameTime(
+      clampNumber(
+        clip.sourceIn + finiteNumber(Number(timelineTime), clip.start) - clip.start,
+        0,
+        assetDuration,
+      ),
+    );
+    if (sourceTime <= keyframes[0].time) return keyframes[0].transform;
+    const last = keyframes[keyframes.length - 1];
+    if (sourceTime >= last.time) return last.transform;
+    for (let index = 0; index < keyframes.length - 1; index += 1) {
+      const left = keyframes[index];
+      const right = keyframes[index + 1];
+      if (sourceTime >= left.time && sourceTime <= right.time) {
+        const span = Math.max(0.0001, right.time - left.time);
+        return interpolateMediaTransform(left, right, (sourceTime - left.time) / span, clip.trackId);
+      }
+    }
+    return fallback;
+  }
 
   function createBlurClip({
     id,
@@ -619,6 +682,91 @@
     });
   }
 
+  function updateMediaClipTransformAtTime(clips, clipId, timelineTime, changes) {
+    return updateClip(clips, clipId, (clip) => {
+      if (!["video", "image"].includes(clip.type)) return clip;
+      const current = mediaTransformAt(clip, timelineTime);
+      const nextTransform = normalizeTransform(
+        {
+          ...current,
+          ...changes,
+          crop: changes.crop ? { ...current.crop, ...changes.crop } : current.crop,
+        },
+        clip.trackId,
+      );
+
+      const assetDuration = Math.max(
+        clip.sourceOut || 0,
+        clip.assetDuration || 0,
+        MIN_CLIP_DURATION,
+      );
+      const sourceTime = snapFrameTime(
+        clampNumber(
+          clip.sourceIn + finiteNumber(Number(timelineTime), clip.start) - clip.start,
+          0,
+          assetDuration,
+        ),
+      );
+
+      const keyframes = normalizeMediaKeyframes(clip.keyframes, assetDuration, current, clip.trackId);
+      if (keyframes.length === 0) {
+        keyframes.push({ time: 0, transform: current });
+      }
+
+      const existing = keyframes.find((keyframe) => Math.abs(keyframe.time - sourceTime) <= 0.0334);
+      if (existing) {
+        existing.transform = nextTransform;
+      } else {
+        keyframes.push({ time: sourceTime, transform: nextTransform });
+      }
+
+      return {
+        ...clip,
+        transform: nextTransform,
+        keyframes: normalizeMediaKeyframes(keyframes, assetDuration, current, clip.trackId),
+      };
+    });
+  }
+
+  function removeMediaKeyframeAtTime(clips, clipId, timelineTime) {
+    return updateClip(clips, clipId, (clip) => {
+      if (!["video", "image"].includes(clip.type)) return clip;
+      const assetDuration = Math.max(
+        clip.sourceOut || 0,
+        clip.assetDuration || 0,
+        MIN_CLIP_DURATION,
+      );
+      const sourceTime = snapFrameTime(
+        clampNumber(
+          clip.sourceIn + finiteNumber(Number(timelineTime), clip.start) - clip.start,
+          0,
+          assetDuration,
+        ),
+      );
+      const keyframes = normalizeMediaKeyframes(clip.keyframes, assetDuration, clip.transform, clip.trackId);
+      const filtered = keyframes.filter((keyframe) => Math.abs(keyframe.time - sourceTime) > 0.0334);
+      return {
+        ...clip,
+        keyframes: normalizeMediaKeyframes(filtered, assetDuration, clip.transform, clip.trackId),
+      };
+    });
+  }
+
+  function clearMediaKeyframes(clips, clipId, timelineTime) {
+    return updateClip(clips, clipId, (clip) => {
+      if (!["video", "image"].includes(clip.type)) return clip;
+      const currentTransform = mediaTransformAt(clip, timelineTime);
+      return {
+        ...clip,
+        keyframes: [],
+        transform: {
+          ...clip.transform,
+          ...currentTransform,
+        },
+      };
+    });
+  }
+
   function updateClipColorAdjustment(clips, clipId, changes) {
     return updateClip(clips, clipId, (clip) => {
       if (["text", "blur", "audio"].includes(clip.type)) return clip;
@@ -751,6 +899,8 @@
     normalizeBlurEffect,
     normalizeBlurKeyframes,
     normalizeTextKeyframes,
+    normalizeMediaKeyframes,
+    mediaTransformAt,
     smartSnapTime,
     snapFrameTime,
     snapTime,
@@ -761,6 +911,9 @@
     trimClipLeft,
     trimClipRight,
     updateClipTransform,
+    updateMediaClipTransformAtTime,
+    removeMediaKeyframeAtTime,
+    clearMediaKeyframes,
     updateClipColorAdjustment,
     updateAudioClip,
     updateBlurClipAtTime,

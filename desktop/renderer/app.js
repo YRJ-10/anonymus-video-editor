@@ -65,6 +65,8 @@ const elements = {
   editText: document.querySelector("#edit-text"),
   addTextKeyframe: document.querySelector("#add-text-keyframe"),
   clearTextKeyframes: document.querySelector("#clear-text-keyframes"),
+  addMediaKeyframe: document.querySelector("#add-media-keyframe"),
+  clearMediaKeyframes: document.querySelector("#clear-media-keyframes"),
   addBlur: document.querySelector("#add-blur"),
   editBlur: document.querySelector("#edit-blur"),
   addTrack: document.querySelector("#add-track"),
@@ -423,7 +425,7 @@ function projectPayload() {
       hasAudio,
     })),
     tracks: structuredClone(state.tracks),
-    clips: structuredClone(state.clips),
+    clips: state.clips,
     activeTrackId: state.activeTrackId,
     playhead: state.playhead,
     pixelsPerSecond: state.pixelsPerSecond,
@@ -701,7 +703,7 @@ function colorCssFilter(clip) {
 }
 
 function applyMediaClipStyle(element, clip) {
-  const transform = Timeline.normalizeTransform(clip.transform, clip.trackId);
+  const transform = Timeline.mediaTransformAt(clip, state.playhead);
   const frame = mediaFramePercent(clip);
   element.classList.add("timeline-layer");
   element.style.inset = "auto";
@@ -769,6 +771,22 @@ function textHasKeyframeAtPlayhead(clip) {
   return clip.keyframes.some((keyframe) => Math.abs(keyframe.time - sourceTime) <= 0.0334);
 }
 
+function mediaHasKeyframes(clip) {
+  return Array.isArray(clip?.keyframes) && clip.keyframes.length > 0;
+}
+
+function mediaKeyframeCount(clip) {
+  return Array.isArray(clip?.keyframes) ? clip.keyframes.length : 0;
+}
+
+function mediaHasKeyframeAtPlayhead(clip) {
+  if (!clip || !["video", "image"].includes(clip.type) || !Array.isArray(clip.keyframes)) return false;
+  const sourceTime = Timeline.snapFrameTime(
+    clamp(clip.sourceIn + state.playhead - clip.start, 0, clip.assetDuration || clip.sourceOut),
+  );
+  return clip.keyframes.some((keyframe) => Math.abs(keyframe.time - sourceTime) <= 0.0334);
+}
+
 function blurTrackingCount(clip) {
   return Array.isArray(clip?.keyframes) ? clip.keyframes.length : 0;
 }
@@ -784,20 +802,25 @@ function updateTransformControls() {
     state.timelinePreview &&
     state.playhead >= clip.start &&
     state.playhead < Timeline.clipEnd(clip);
-  for (const button of [
-    elements.transformFit,
-    elements.transformFill,
-    elements.transformCrop,
-    elements.transformColor,
-    elements.transformReset,
-  ]) {
-    button.disabled = !enabled;
-  }
+  elements.transformFit.disabled = !enabled;
+  elements.transformFill.disabled = !enabled;
+  elements.transformCrop.disabled = !enabled;
+  elements.transformColor.disabled = !enabled;
+  elements.transformReset.disabled = !enabled;
+
   const mode = clip
     ? Timeline.normalizeTransform(clip.transform, clip.trackId).fitMode
     : null;
   elements.transformFit.classList.toggle("active", enabled && mode === "fit");
   elements.transformFill.classList.toggle("active", enabled && mode === "fill");
+
+  if (elements.addMediaKeyframe) {
+    elements.addMediaKeyframe.disabled = !enabled;
+    elements.addMediaKeyframe.textContent = mediaHasKeyframeAtPlayhead(clip) ? "Remove key" : "Keyframe";
+  }
+  if (elements.clearMediaKeyframes) {
+    elements.clearMediaKeyframes.disabled = !enabled || !mediaHasKeyframes(clip);
+  }
 }
 
 function renderTransformBox() {
@@ -811,7 +834,7 @@ function renderTransformBox() {
   updateTransformControls();
   if (!active) return;
 
-  const transform = Timeline.normalizeTransform(clip.transform, clip.trackId);
+  const transform = Timeline.mediaTransformAt(clip, state.playhead);
   const frame = mediaFramePercent(clip);
   const visibleWidth =
     frame.width * transform.scale * (1 - transform.crop.left - transform.crop.right);
@@ -827,6 +850,17 @@ function renderTransformBox() {
   elements.transformBox.style.top = `${centerY}%`;
   elements.transformBox.style.width = `${Math.max(0.5, visibleWidth)}%`;
   elements.transformBox.style.height = `${Math.max(0.5, visibleHeight)}%`;
+
+  const count = mediaKeyframeCount(clip);
+  elements.transformBox.classList.toggle("tracking", count > 0);
+  elements.transformBox.classList.toggle("keyframe-now", mediaHasKeyframeAtPlayhead(clip));
+  if (count > 0) {
+    elements.transformBox.dataset.keyframes =
+      `${count} key${count === 1 ? "" : "s"}` +
+      `${mediaHasKeyframeAtPlayhead(clip) ? " • current" : ""}`;
+  } else {
+    delete elements.transformBox.dataset.keyframes;
+  }
 }
 
 function resetView() {
@@ -1445,6 +1479,22 @@ function renderClips() {
     );
 
     element.append(leftHandle, body, rightHandle);
+    
+    if (clip.keyframes && clip.keyframes.length > 0) {
+      const markers = document.createElement("div");
+      markers.className = "clip-keyframes";
+      const clipDur = Timeline.clipDuration(clip);
+      for (const kf of clip.keyframes) {
+        const percent = (kf.time - clip.sourceIn) / clipDur * 100;
+        if (percent >= 0 && percent <= 100) {
+          const dot = document.createElement("div");
+          dot.className = "keyframe-marker";
+          dot.style.left = `${percent}%`;
+          markers.appendChild(dot);
+        }
+      }
+      element.append(markers);
+    }
     element.addEventListener("pointerdown", (event) => {
       if (event.target.classList.contains("clip-handle")) return;
       beginClipDrag(event, clip.id, "move");
@@ -2261,7 +2311,18 @@ function syncCompositionDuringPlayback() {
   const nextSignature = compositionKey(activeClips, baseClip);
   if (nextSignature !== state.compositionSignature) {
     renderComposition();
+    if (state.timelinePlaying) {
+      const media = playbackElement();
+      if (media && media.paused) media.play().catch(() => {});
+    }
     return;
+  }
+
+  if (baseClip) {
+    applyMediaClipStyle(
+      elements.video.classList.contains("visible") ? elements.video : elements.image,
+      baseClip
+    );
   }
 
   for (const video of overlayVideos()) {
@@ -2270,8 +2331,19 @@ function syncCompositionDuringPlayback() {
     const desired = clip.sourceIn + (state.playhead - clip.start);
     if (Math.abs(video.currentTime - desired) > 0.15) video.currentTime = desired;
   }
+  updateActiveMediaOverlays();
   updateActiveBlurOverlays();
   updateActiveTextOverlays();
+}
+
+function updateActiveMediaOverlays() {
+  for (const overlay of elements.overlayStage.querySelectorAll(".timeline-layer")) {
+    if (overlay.tagName !== "DIV" && overlay.tagName !== "VIDEO" && overlay.tagName !== "IMG") continue;
+    if (!overlay.dataset.clipId) continue;
+    const clip = state.clips.find((candidate) => candidate.id === overlay.dataset.clipId);
+    if (!clip || !mediaHasKeyframes(clip)) continue;
+    applyMediaClipStyle(overlay, clip);
+  }
 }
 
 function updateActiveBlurOverlays() {
@@ -2533,15 +2605,21 @@ function updateMediaTransform(event) {
   const drag = state.mediaTransformDrag;
   if (!drag) return;
   const rect = elements.compositionSurface.getBoundingClientRect();
+  const clip = state.clips.find((candidate) => candidate.id === drag.clipId);
+  const useKeyframes = mediaHasKeyframes(clip);
+
   if (drag.mode === "move") {
     const x = drag.transform.x + ((event.clientX - drag.startX) / rect.width) * 100;
     const y = drag.transform.y + ((event.clientY - drag.startY) / rect.height) * 100;
-    state.clips = Timeline.updateClipTransform(state.clips, drag.clipId, { x, y });
+    state.clips = useKeyframes
+      ? Timeline.updateMediaClipTransformAtTime(state.clips, drag.clipId, state.playhead, { x, y })
+      : Timeline.updateClipTransform(state.clips, drag.clipId, { x, y });
   } else {
     const distance = Math.hypot(event.clientX - drag.centerX, event.clientY - drag.centerY);
-    state.clips = Timeline.updateClipTransform(state.clips, drag.clipId, {
-      scale: drag.transform.scale * (distance / drag.startDistance),
-    });
+    const scale = drag.transform.scale * (distance / drag.startDistance);
+    state.clips = useKeyframes
+      ? Timeline.updateMediaClipTransformAtTime(state.clips, drag.clipId, state.playhead, { scale })
+      : Timeline.updateClipTransform(state.clips, drag.clipId, { scale });
   }
   renderComposition();
 }
@@ -2555,7 +2633,10 @@ function endMediaTransform() {
 function applyTransformMode(fitMode) {
   const clip = selectedMediaClip();
   if (!clip) return;
-  state.clips = Timeline.updateClipTransform(state.clips, clip.id, { fitMode });
+  const useKeyframes = mediaHasKeyframes(clip);
+  state.clips = useKeyframes
+    ? Timeline.updateMediaClipTransformAtTime(state.clips, clip.id, state.playhead, { fitMode })
+    : Timeline.updateClipTransform(state.clips, clip.id, { fitMode });
   renderComposition();
   commitEdit();
 }
@@ -2564,9 +2645,42 @@ function resetSelectedTransform() {
   const clip = selectedMediaClip();
   if (!clip) return;
   const reset = Timeline.normalizeTransform(null, clip.trackId);
-  state.clips = Timeline.updateClipTransform(state.clips, clip.id, reset);
+  const useKeyframes = mediaHasKeyframes(clip);
+  state.clips = useKeyframes
+    ? Timeline.updateMediaClipTransformAtTime(state.clips, clip.id, state.playhead, reset)
+    : Timeline.updateClipTransform(state.clips, clip.id, reset);
   renderComposition();
   commitEdit();
+}
+
+function addSelectedMediaKeyframe() {
+  const clip = selectedMediaClip();
+  if (!clip || state.playhead < clip.start || state.playhead >= Timeline.clipEnd(clip)) return;
+  const updating = mediaHasKeyframeAtPlayhead(clip);
+  
+  if (updating) {
+    state.clips = Timeline.removeMediaKeyframeAtTime(state.clips, clip.id, state.playhead);
+  } else {
+    const transform = Timeline.mediaTransformAt(clip, state.playhead);
+    state.clips = Timeline.updateMediaClipTransformAtTime(state.clips, clip.id, state.playhead, transform);
+  }
+  
+  const updated = state.clips.find((candidate) => candidate.id === clip.id);
+  const count = mediaKeyframeCount(updated);
+  renderTimeline();
+  renderComposition();
+  commitEdit();
+  showStatus(`${updating ? "Media keyframe removed" : "Media keyframe added"} (${count})`);
+}
+
+function clearSelectedMediaKeyframes() {
+  const clip = selectedMediaClip();
+  if (!clip || !mediaHasKeyframes(clip)) return;
+  state.clips = Timeline.clearMediaKeyframes(state.clips, clip.id, state.playhead);
+  renderTimeline();
+  renderComposition();
+  commitEdit();
+  showStatus("Media keyframes cleared");
 }
 
 function cropValues() {
@@ -2714,6 +2828,8 @@ elements.transformFill.addEventListener("click", () => applyTransformMode("fill"
 elements.transformCrop.addEventListener("click", openCropDialog);
 elements.transformColor.addEventListener("click", openColorDialog);
 elements.transformReset.addEventListener("click", resetSelectedTransform);
+elements.addMediaKeyframe.addEventListener("click", addSelectedMediaKeyframe);
+elements.clearMediaKeyframes.addEventListener("click", clearSelectedMediaKeyframes);
 elements.transformBox.addEventListener("pointerdown", beginMediaTransform);
 for (const input of [
   elements.cropLeft,
@@ -2848,33 +2964,81 @@ elements.image.addEventListener("load", () => {
   if (detectCanvasFromAsset(asset, false)) commitEdit();
 });
 
-elements.video.addEventListener("timeupdate", () => {
-  updatePlayback();
-  const clip = state.timelinePreview
-    ? state.clips.find((candidate) => candidate.id === state.baseClipId)
-    : selectedClip();
-  if (!clip || clip.assetPath !== state.loadedAssetPath) return;
+let timelinePlaybackFrame;
+let lastTimelineTime;
 
-  if (elements.video.currentTime >= clip.sourceOut - 0.02) {
-    const boundary = Timeline.clipEnd(clip);
-    if (continueTimelinePlaybackAt(boundary)) return;
+function toggleTimelinePlayback() {
+  if (state.timelinePlaying) {
+    state.timelinePlaying = false;
+    cancelAnimationFrame(timelinePlaybackFrame);
     elements.video.pause();
-    state.playhead = boundary;
-  } else if (elements.video.currentTime >= clip.sourceIn) {
-    state.playhead = clip.start + (elements.video.currentTime - clip.sourceIn);
+    elements.audio.pause();
+    pauseOverlayVideos();
+    elements.play.textContent = "▶";
+    updatePlayback();
+  } else {
+    state.timelinePlaying = true;
+    lastTimelineTime = performance.now();
+    elements.play.textContent = "❚❚";
+    
+    const media = playbackElement();
+    if (media) media.play().catch(console.error);
+    playOverlayVideos();
+    
+    timelinePlaybackFrame = requestAnimationFrame(timelinePlaybackLoop);
   }
+}
+
+function timelinePlaybackLoop(now) {
+  if (!state.timelinePlaying) return;
+  
+  const delta = (now - lastTimelineTime) / 1000;
+  lastTimelineTime = now;
+  
+  const media = playbackElement();
+  if (media && !media.paused && media.readyState >= 2) {
+    const clip = playbackClip(media);
+    if (clip) {
+      if (media.currentTime >= clip.sourceOut - 0.02) {
+         state.playhead = Timeline.clipEnd(clip);
+         syncCompositionDuringPlayback();
+      } else if (media.currentTime >= clip.sourceIn) {
+         state.playhead = clip.start + (media.currentTime - clip.sourceIn);
+      }
+    }
+  } else {
+    state.playhead += delta;
+    syncCompositionDuringPlayback();
+  }
+  
+  const maxTime = Math.max(0, ...state.clips.map(Timeline.clipEnd));
+  if (state.playhead >= maxTime) {
+    state.playhead = maxTime;
+    toggleTimelinePlayback();
+    updatePlayheadVisual();
+    ensurePlayheadVisible();
+    syncCompositionDuringPlayback();
+    return;
+  }
+  
   updatePlayheadVisual();
   ensurePlayheadVisible();
   syncCompositionDuringPlayback();
+  
+  timelinePlaybackFrame = requestAnimationFrame(timelinePlaybackLoop);
+}
+
+elements.video.addEventListener("timeupdate", () => {
+  if (!state.timelinePreview && !elements.video.paused) {
+    updatePlayback();
+  }
 });
 
 elements.video.addEventListener("play", () => {
-  updatePlayback();
-  playOverlayVideos();
+  if (!state.timelinePreview) updatePlayback();
 });
 elements.video.addEventListener("pause", () => {
-  updatePlayback();
-  pauseOverlayVideos();
+  if (!state.timelinePreview) updatePlayback();
 });
 elements.video.addEventListener("ended", updatePlayback);
 
@@ -2887,8 +3051,16 @@ elements.audio.addEventListener("pause", () => updatePlayback(elements.audio));
 elements.audio.addEventListener("ended", () => updatePlayback(elements.audio));
 
 async function togglePlayback() {
+  if (elements.play.disabled) return;
+  
+  if (state.timelinePreview) {
+    toggleTimelinePlayback();
+    return;
+  }
+  
   const media = playbackElement();
-  if (elements.play.disabled || !media) return;
+  if (!media) return;
+  
   const clip = playbackClip(media);
   if (clip && media.currentTime >= clip.sourceOut - 0.02) {
     media.currentTime = clip.sourceIn;

@@ -15,6 +15,8 @@ const {
   normalizeTextKeyframes,
   normalizeTransform,
   textPositionAt,
+  mediaTransformAt,
+  normalizeMediaKeyframes,
 } = require("../desktop/renderer/timeline-model");
 
 const BLUR_TRACKING_SAFETY_PADDING_PX = 8;
@@ -180,41 +182,61 @@ function blurExpression(points, field) {
     value: Number(point[field]),
   }));
   const build = (index) => {
-    const current = values[index];
-    if (index === 0) {
-      return `if(lte(t\\,${filterNumber(current.time)})\\,${filterNumber(current.value)}\\,${build(index + 1)})`;
+    if (index >= values.length - 1) {
+      return filterNumber(values[values.length - 1].value);
     }
-    if (index >= values.length - 1) return filterNumber(current.value);
+    const current = values[index];
     const next = values[index + 1];
     const span = Math.max(0.0001, next.time - current.time);
     const linear =
       `${filterNumber(current.value)}+(${filterNumber(next.value - current.value)})*` +
       `(t-${filterNumber(current.time)})/${filterNumber(span)}`;
+      
+    if (index === 0) {
+      return `if(lt(t\\,${filterNumber(current.time)})\\,${filterNumber(current.value)}\\,if(lte(t\\,${filterNumber(next.time)})\\,${linear}\\,${build(index + 1)}))`;
+    }
     return `if(lte(t\\,${filterNumber(next.time)})\\,${linear}\\,${build(index + 1)})`;
   };
   return build(0);
 }
 
+function buildInterpolationExpression(values) {
+  const build = (index) => {
+    if (index >= values.length - 1) {
+      return filterNumber(values[values.length - 1].value);
+    }
+    const current = values[index];
+    const next = values[index + 1];
+    const span = Math.max(0.0001, next.time - current.time);
+    const linear =
+      `${filterNumber(current.value)}+(${filterNumber(next.value - current.value)})*` +
+      `(t-${filterNumber(current.time)})/${filterNumber(span)}`;
+    if (index === 0) {
+      return `if(lt(t\\,${filterNumber(current.time)})\\,${filterNumber(current.value)}\\,if(lte(t\\,${filterNumber(next.time)})\\,${linear}\\,${build(index + 1)}))`;
+    }
+    return `if(lte(t\\,${filterNumber(next.time)})\\,${linear}\\,${build(index + 1)})`;
+  };
+  return build(0);
+}
+
+// For x/y: raw values are 0-100, FFmpeg needs 0-1 ratio
 function textPositionExpression(points, field) {
   if (points.length === 0) return "0";
   const values = points.map((point) => ({
     time: Number(point.time),
     value: Number(point[field]) / 100,
   }));
-  const build = (index) => {
-    const current = values[index];
-    if (index === 0) {
-      return `if(lte(t\\,${filterNumber(current.time)})\\,${filterNumber(current.value)}\\,${build(index + 1)})`;
-    }
-    if (index >= values.length - 1) return filterNumber(current.value);
-    const next = values[index + 1];
-    const span = Math.max(0.0001, next.time - current.time);
-    const linear =
-      `${filterNumber(current.value)}+(${filterNumber(next.value - current.value)})*` +
-      `(t-${filterNumber(current.time)})/${filterNumber(span)}`;
-    return `if(lte(t\\,${filterNumber(next.time)})\\,${linear}\\,${build(index + 1)})`;
-  };
-  return build(0);
+  return buildInterpolationExpression(values);
+}
+
+// For scale and other raw values that should NOT be divided by 100
+function rawValueExpression(points, field) {
+  if (points.length === 0) return "1";
+  const values = points.map((point) => ({
+    time: Number(point.time),
+    value: Number(point[field]),
+  }));
+  return buildInterpolationExpression(values);
 }
 
 function textPositionPointsForClip(clip) {
@@ -235,6 +257,25 @@ function textPositionPointsForClip(clip) {
         y: keyframe.y,
       })),
     { time: clipEnd(clip), ...textPositionAt(clip, clipEnd(clip)) },
+  ]
+    .sort((left, right) => left.time - right.time)
+    .filter((point, index, list) => index === 0 || Math.abs(point.time - list[index - 1].time) > 0.0001);
+}
+
+function mediaTransformPointsForClip(clip) {
+  const duration = Math.max(clip.sourceOut || 0, clip.assetDuration || 0, clipDuration(clip));
+  const sourceStart = Number(clip.sourceIn) || 0;
+  const sourceEnd = Number(clip.sourceOut) || sourceStart + clipDuration(clip);
+  const keyframes = normalizeMediaKeyframes(clip.keyframes, duration, clip.transform, clip.trackId);
+  return [
+    { time: Number(clip.start), transform: mediaTransformAt(clip, Number(clip.start)) },
+    ...keyframes
+      .filter((keyframe) => keyframe.time >= sourceStart && keyframe.time <= sourceEnd)
+      .map((keyframe) => ({
+        time: Number(clip.start) + (keyframe.time - sourceStart),
+        transform: keyframe.transform,
+      })),
+    { time: clipEnd(clip), transform: mediaTransformAt(clip, clipEnd(clip)) },
   ]
     .sort((left, right) => left.time - right.time)
     .filter((point, index, list) => index === 0 || Math.abs(point.time - list[index - 1].time) > 0.0001);
@@ -391,21 +432,29 @@ async function buildExportPlan(project, temporaryPaths) {
     const layer = `layer${index}`;
     const nextVideo = `composite${index + 1}`;
     const transform = normalizeTransform(clip.transform, clip.trackId);
-    const targetWidth = Math.max(2, Math.round((canvas.width * transform.scale) / 2) * 2);
-    const targetHeight = Math.max(
-      2,
-      Math.round((canvas.height * transform.scale) / 2) * 2,
-    );
-    const horizontalFactor = 1 - transform.crop.left - transform.crop.right;
-    const verticalFactor = 1 - transform.crop.top - transform.crop.bottom;
+    const transformPoints = mediaTransformPointsForClip(clip);
+    // For clip-internal filters (scale), t starts from 0 at the clip start.
+    // Convert timeline times to local clip times.
+    const localTransformPoints = transformPoints.map(p => ({
+      ...p,
+      time: p.time - clip.start,
+    }));
+    const scalePoints = localTransformPoints.map(p => ({ time: p.time, val: p.transform.scale }));
+    const scaleExpression = rawValueExpression(scalePoints, "val");
+
+    const targetWidthExpr = `max(2\\,trunc(${canvas.width}*(${scaleExpression})/2)*2)`;
+    const targetHeightExpr = `max(2\\,trunc(${canvas.height}*(${scaleExpression})/2)*2)`;
+
     const scaleAndFrame =
       transform.fitMode === "fill"
-        ? `scale=w=${targetWidth}:h=${targetHeight}:` +
-          "force_original_aspect_ratio=increase:force_divisible_by=2," +
-          `crop=w=${targetWidth}:h=${targetHeight}:x=(iw-${targetWidth})/2:` +
-          `y=(ih-${targetHeight})/2`
-        : `scale=w=${targetWidth}:h=${targetHeight}:` +
-          "force_original_aspect_ratio=decrease:force_divisible_by=2";
+        ? `scale=w='${targetWidthExpr}':h='${targetHeightExpr}':` +
+          "force_original_aspect_ratio=increase:force_divisible_by=2:eval=frame," +
+          `crop=w='${targetWidthExpr}':h='${targetHeightExpr}':x='(iw-${targetWidthExpr})/2':` +
+          `y='(ih-${targetHeightExpr})/2'`
+        : `scale=w='${targetWidthExpr}':h='${targetHeightExpr}':` +
+          "force_original_aspect_ratio=decrease:force_divisible_by=2:eval=frame";
+    const horizontalFactor = 1 - transform.crop.left - transform.crop.right;
+    const verticalFactor = 1 - transform.crop.top - transform.crop.bottom;
     const crop =
       `crop=w='trunc(iw*${filterNumber(horizontalFactor)}/2)*2':` +
       `h='trunc(ih*${filterNumber(verticalFactor)}/2)*2':` +
@@ -421,6 +470,12 @@ async function buildExportPlan(project, temporaryPaths) {
         ? "0"
         : `(${filterNumber(transform.crop.top - transform.crop.bottom)})*` +
           `h/${filterNumber(verticalFactor)}/2`;
+    // For overlay filter, t is global timeline time — use original transformPoints times.
+    const xPoints = transformPoints.map(p => ({ time: p.time, x: p.transform.x }));
+    const yPoints = transformPoints.map(p => ({ time: p.time, y: p.transform.y }));
+    const xExpression = textPositionExpression(xPoints, "x");
+    const yExpression = textPositionExpression(yPoints, "y");
+
     filters.push(
       `[${inputIndex}:v:0]trim=duration=${filterNumber(clipLength)},` +
         `setpts=PTS-STARTPTS+${filterNumber(clip.start)}/TB,fps=30,` +
@@ -428,8 +483,8 @@ async function buildExportPlan(project, temporaryPaths) {
     );
     filters.push(
       `[${currentVideo}][${layer}]overlay=` +
-        `x='W*${filterNumber(transform.x / 100)}-w/2+${xOffset}':` +
-        `y='H*${filterNumber(transform.y / 100)}-h/2+${yOffset}':` +
+        `x='W*(${xExpression})-w/2+${xOffset}':` +
+        `y='H*(${yExpression})-h/2+${yOffset}':` +
         `eof_action=pass:shortest=0:enable='between(t,${filterNumber(clip.start)},` +
         `${filterNumber(clipEnd(clip))})'[${nextVideo}]`,
     );

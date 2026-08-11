@@ -6,6 +6,7 @@ const {
   normalizeColorAdjustment,
   normalizeTextKeyframes,
   normalizeTransform,
+  normalizeMediaKeyframes,
 } = require("./renderer/timeline-model");
 
 const PROJECT_FORMAT = "anon-editor-project";
@@ -122,6 +123,12 @@ function normalizeProject(input) {
       );
     } else {
       normalized.transform = normalizeTransform(clip.transform, trackId);
+      normalized.keyframes = normalizeMediaKeyframes(
+        clip.keyframes,
+        normalized.assetDuration,
+        normalized.transform,
+        trackId,
+      );
       normalized.colorAdjustment = normalizeColorAdjustment(clip.colorAdjustment);
       normalized.volume = Math.min(2, Math.max(0, finite(clip.volume, 1)));
       normalized.muted = Boolean(clip.muted);
